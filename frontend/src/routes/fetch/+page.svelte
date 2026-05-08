@@ -255,18 +255,14 @@
     }
 
     .fetch-layout {
-        display: flex;
-        flex-direction: column;
+        display: grid;
+        grid-template-columns: minmax(0, 1.15fr) minmax(20rem, 0.85fr);
         gap: var(--space-4);
-        max-width: 58rem;
+        align-items: start;
     }
 
     .form-panel {
         padding: var(--space-5);
-    }
-
-    .form-panel form {
-        max-width: 42rem;
     }
 
     .recommended-panel {
@@ -305,6 +301,10 @@
         display: grid;
         gap: var(--space-2);
         margin-bottom: 0;
+    }
+
+    .field .small {
+        line-height: 1.35;
     }
 
     .field input {
@@ -359,6 +359,10 @@
     }
 
     @media (max-width: 639px) {
+        .fetch-layout {
+            grid-template-columns: 1fr;
+        }
+
         .page-head {
             align-items: flex-start;
             flex-direction: column;
