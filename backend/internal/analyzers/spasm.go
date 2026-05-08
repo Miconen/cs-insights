@@ -101,7 +101,7 @@ func (a *SpasmAnalyzer) analyzeHistoryForSpasms(state *parser.GameState) {
 		// Check for zig-zag (sign flip in velocity)
 		// If we were moving left and are now moving right
 		if (prevYawDiff > 0 && yawDiff < 0) || (prevYawDiff < 0 && yawDiff > 0) {
-			if math.Abs(float64(yawDiff)) > 0.5 { // Only count significant zig-zags
+			if math.Abs(float64(yawDiff)) > 0.2 { // Lowered threshold to catch subtler reversals
 				zigzags++
 			}
 		}
@@ -109,7 +109,8 @@ func (a *SpasmAnalyzer) analyzeHistoryForSpasms(state *parser.GameState) {
 		prevYawDiff = yawDiff
 	}
 
-	// Thresholds for spasming/tensing
+	// Thresholds for spasming/tensing.
+	// Require fewer reversals and less total variance to catch subtler habits.
 	if zigzags >= a.cfg.MinZigZags && totalVariance > float32(a.cfg.VarianceThreshold) {
 		a.insights = append(a.insights, parser.InsightData{
 			Round:       state.CurrentRound,

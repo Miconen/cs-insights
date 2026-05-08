@@ -5,8 +5,8 @@
       "reaction_time_max_ms": 500.0
     },
     "spasm": {
-      "variance_threshold": 15.0,
-      "min_zig_zags": 4
+      "variance_threshold": 8.0,
+      "min_zig_zags": 2
     },
     "counter_strafe": {
       "max_velocity_threshold": 34.0
