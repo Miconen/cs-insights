@@ -10,7 +10,7 @@
         knownCode: string;
     };
 
-    const pageSize = 10;
+    const pageSize = 1;
     let request: FetchRequest | null = null;
     let matches: any[] = [];
     let loading = true;
@@ -48,7 +48,9 @@
 
             hasMore = nextMatches.length === pageSize;
         } catch (e: any) {
-            error = e.message;
+            error = e.message.includes('429')
+                ? 'Steam rate-limited this request. Wait a minute, then press Load more again. Fetching one match at a time helps avoid this.'
+                : e.message;
         } finally {
             loading = false;
             loadingMore = false;
@@ -99,56 +101,47 @@
             <span class="small muted">Check your API key, auth code, SteamID64 and known share code.</span>
         </div>
     {:else}
-        <div class="match-grid">
+        <div class="match-list">
             {#each matches as match}
                 <article class="card stack-sm match-card">
                     <div class="row-between match-head">
-                        <strong>Match Share Code</strong>
+                        <div class="stack-xs">
+                            <strong>Match Share Code</strong>
+                            <code>{match.share_code}</code>
+                        </div>
                         {#if match.processed}
                             <span class="badge status-success">Processed</span>
                         {:else if match.downloaded}
                             <span class="badge status-warning">Downloaded</span>
                         {:else}
-                            <span class="small muted">Not downloaded</span>
+                            <span class="badge status-neutral">Metadata only</span>
                         {/if}
                     </div>
 
-                    <code>{match.share_code}</code>
+                    <div class="match-body">
+                        <dl class="match-meta">
+                            <div>
+                                <dt>Match ID</dt>
+                                <dd>{match.match_id}</dd>
+                            </div>
+                            <div>
+                                <dt>Outcome ID</dt>
+                                <dd>{match.outcome_id}</dd>
+                            </div>
+                            <div>
+                                <dt>TV Port</dt>
+                                <dd>{match.tv_port}</dd>
+                            </div>
+                            <div>
+                                <dt>Replay URL</dt>
+                                <dd>{match.demo_url || 'Not returned by the Steam Web API'}</dd>
+                            </div>
+                        </dl>
 
-                    <dl class="match-meta">
-                        <div>
-                            <dt>Match ID</dt>
-                            <dd>{match.match_id}</dd>
+                        <div class="match-note">
+                            <p class="small muted">{match.details || 'This token flow can list and decode matches, but it does not currently provide a replay URL to download.'}</p>
+                            <p class="small muted">Use the legacy GCPD flow when you need direct demo downloads.</p>
                         </div>
-                        <div>
-                            <dt>Outcome ID</dt>
-                            <dd>{match.outcome_id}</dd>
-                        </div>
-                        <div>
-                            <dt>TV Port</dt>
-                            <dd>{match.tv_port}</dd>
-                        </div>
-                        <div>
-                            <dt>File</dt>
-                            <dd>{match.file_name}</dd>
-                        </div>
-                        <div>
-                            <dt>Replay URL</dt>
-                            <dd>{match.demo_url || 'Unavailable via Steam Web API'}</dd>
-                        </div>
-                    </dl>
-
-                    {#if match.details}
-                        <p class="small muted">{match.details}</p>
-                    {/if}
-
-                    <div class="match-actions">
-                        <button
-                            class="chip primary-chip"
-                            disabled
-                        >
-                            Download unavailable
-                        </button>
                     </div>
                 </article>
             {/each}
@@ -163,9 +156,9 @@
 </section>
 
 <style>
-    .match-grid {
-        display: grid;
-        grid-template-columns: repeat(auto-fit, minmax(min(100%, 22rem), 1fr));
+    .match-list {
+        display: flex;
+        flex-direction: column;
         gap: var(--space-4);
     }
 
@@ -177,9 +170,17 @@
         align-items: center;
     }
 
+    .match-body {
+        align-items: start;
+        display: grid;
+        gap: var(--space-4);
+        grid-template-columns: minmax(0, 1fr) minmax(16rem, 0.55fr);
+    }
+
     .match-meta {
         display: grid;
         gap: var(--space-2);
+        grid-template-columns: repeat(2, minmax(0, 1fr));
         margin: 0;
     }
 
@@ -202,19 +203,15 @@
         overflow-wrap: anywhere;
     }
 
-    .match-actions {
-        align-items: center;
-        display: flex;
-        flex-wrap: wrap;
-        gap: var(--space-3);
+    .match-note {
+        background: color-mix(in srgb, var(--color-warning) 6%, var(--color-surface-2));
+        border: 1px solid color-mix(in srgb, var(--color-warning) 25%, var(--color-border));
+        border-radius: var(--radius-lg);
+        padding: var(--space-3);
     }
 
-    .primary-chip {
-        background: var(--color-accent);
-        color: var(--color-accent-contrast);
-        border-color: var(--color-accent);
-        height: 2.25rem;
-        width: fit-content;
+    .match-note p:last-child {
+        margin-bottom: 0;
     }
 
     .status-success {
@@ -223,6 +220,10 @@
 
     .status-warning {
         color: var(--color-warning);
+    }
+
+    .status-neutral {
+        color: var(--color-text-muted);
     }
 
     .error-card {
@@ -241,6 +242,11 @@
         .match-head {
             align-items: flex-start;
             flex-direction: column;
+        }
+
+        .match-body,
+        .match-meta {
+            grid-template-columns: 1fr;
         }
     }
 </style>

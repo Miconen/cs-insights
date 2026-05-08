@@ -85,6 +85,9 @@ func GetNextMatchShareCodes(apiKey, steamID64, authCode, knownCode string, limit
 		}
 
 		if resp.StatusCode != 200 {
+			if resp.StatusCode == http.StatusTooManyRequests {
+				return nil, fmt.Errorf("Steam API returned 429 (rate limited). Wait before requesting more match share codes")
+			}
 			return nil, fmt.Errorf("Steam API returned %d: %s", resp.StatusCode, strings.TrimSpace(string(body)))
 		}
 
@@ -126,7 +129,7 @@ func BuildShareCodeInfo(shareCode string, outputDir string) (ShareCodeInfo, erro
 		OutcomeID:  decoded.OutcomeID.String(),
 		TVPort:     decoded.TVPort,
 		FileName:   fileName,
-		Details:    "Steam Web API only returns share codes. Map, date, score and replay URL require Steam Game Coordinator match metadata.",
+		Details:    "Steam Web API only returns share codes. Map, date, score and replay URL require Steam Game Coordinator match metadata, so this card is informational until GC support is added.",
 		Downloaded: statErr == nil,
 	}, nil
 }
