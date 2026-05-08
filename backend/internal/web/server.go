@@ -97,7 +97,7 @@ func (s *Server) handleFetchShareCodesAPI(w http.ResponseWriter, r *http.Request
 		return
 	}
 
-	codes, err := fetcher.GetNextMatchShareCodes(apiKey, steamID, authCode, knownCode, limit)
+	codes, err := fetcher.GetNextMatchShareCodes(apiKey, steamID, authCode, knownCode, limit, "demos")
 	if err != nil {
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 		return
@@ -118,6 +118,7 @@ func (s *Server) handleFetchProcessAPI(w http.ResponseWriter, r *http.Request) {
 
 	var req struct {
 		Link       string `json:"link"`
+		ShareCode  string `json:"share_code"`
 		PlayerName string `json:"player_name"`
 	}
 
@@ -126,8 +127,17 @@ func (s *Server) handleFetchProcessAPI(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	if req.Link == "" && req.ShareCode != "" {
+		info, err := fetcher.BuildShareCodeInfo(req.ShareCode, "demos")
+		if err != nil {
+			http.Error(w, "Invalid share code: "+err.Error(), http.StatusBadRequest)
+			return
+		}
+		req.Link = info.DemoURL
+	}
+
 	if req.Link == "" || req.PlayerName == "" {
-		http.Error(w, "Missing link or player_name", http.StatusBadRequest)
+		http.Error(w, "Missing link/share_code or player_name", http.StatusBadRequest)
 		return
 	}
 

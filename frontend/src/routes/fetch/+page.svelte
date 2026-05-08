@@ -58,7 +58,8 @@
         processingStatuses = { ...processingStatuses, [link]: status };
     }
 
-    async function processMatch(link: string) {
+    async function processMatch(match: any) {
+        const link = match.link || match.demo_url || match.share_code;
         if (!playerName) {
             alert('Please enter your Player Name before processing.');
             return;
@@ -77,13 +78,18 @@
             const res = await fetch('http://localhost:8080/api/fetch/process', {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({ link, player_name: playerName })
+                body: JSON.stringify({
+                    link: match.link || match.demo_url || '',
+                    share_code: match.share_code || '',
+                    player_name: playerName
+                })
             });
             if (!res.ok) throw new Error(await res.text());
             const result = await res.json();
             
             // Mark as processed in UI
             matches = matches.map(m => m.link === link ? { ...m, processed: true, downloaded: true } : m);
+            shareCodes = shareCodes.map(m => m.share_code === match.share_code ? { ...m, processed: true, downloaded: true } : m);
             setProcessingStatus(link, `Done. Saved ${result.insights ?? 0} insights.`);
         } catch (e: any) {
             setProcessingStatus(link, `Failed: ${e.message}`);
@@ -112,7 +118,7 @@
                 <span class="eyebrow">Recommended</span>
                 <h2>Steam Match History Token</h2>
                 <p class="muted small">
-                    Uses Valve's official match-history API. Safer than using a browser-session cookie. Direct demo download from share codes is still pending.
+                    Uses Valve's official match-history API. Safer than using a browser-session cookie. Share codes can be downloaded and analyzed directly.
                 </p>
             </div>
 
@@ -149,14 +155,29 @@
             {#if shareCodes.length > 0}
                 <div class="stack-sm result-panel">
                     <div class="section-heading">Share Codes ({shareCodes.length})</div>
-                    <ul>
-                        {#each shareCodes as item}
-                            <li><code>{item.share_code}</code></li>
-                        {/each}
-                    </ul>
-                    <p class="muted small">These are fetched without using your Steam session cookie. Download/analyze support from share codes still needs to be implemented.</p>
-                </div>
-            {/if}
+                <ul>
+                    {#each shareCodes as item}
+                        <li class="share-code-item">
+                            <div>
+                                <code>{item.share_code}</code>
+                                <div class="small muted">{item.file_name}</div>
+                                {#if processingStatuses[item.share_code]}
+                                    <div class="small muted process-status">{processingStatuses[item.share_code]}</div>
+                                {/if}
+                            </div>
+                            <button
+                                class="chip"
+                                disabled={processingLink === item.share_code || item.processed}
+                                aria-busy={processingLink === item.share_code}
+                                onclick={() => processMatch(item)}
+                            >
+                                {item.processed ? 'Analyzed' : (item.downloaded ? 'Analyze Again' : 'Download & Analyze')}
+                            </button>
+                        </li>
+                    {/each}
+                </ul>
+            </div>
+        {/if}
         </article>
 
         <article class="card stack form-panel legacy-panel">
@@ -228,7 +249,7 @@
                                             class="chip"
                                             disabled={processingLink === match.link || match.processed}
                                             aria-busy={processingLink === match.link}
-                                            onclick={() => processMatch(match.link)}
+                                            onclick={() => processMatch(match)}
                                         >
                                             {match.processed ? 'Analyzed' : (match.downloaded ? 'Analyze Again' : 'Download & Analyze')}
                                         </button>
@@ -347,6 +368,14 @@
     .result-panel {
         border-top: 1px solid var(--color-border);
         padding-top: var(--space-4);
+    }
+
+    .share-code-item {
+        align-items: center;
+        display: flex;
+        gap: var(--space-3);
+        justify-content: space-between;
+        padding-block: var(--space-2);
     }
 
     .error-card {
