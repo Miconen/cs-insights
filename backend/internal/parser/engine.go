@@ -12,10 +12,11 @@ import (
 )
 
 type GameState struct {
-	CurrentTick  int
-	CurrentRound int
-	MapName      string
-	Parser       demoinfocs.Parser
+	CurrentTick    int
+	CurrentRound   int
+	MapName        string
+	LiveEnemyCount int // updated every tick for the target player's perspective
+	Parser         demoinfocs.Parser
 }
 
 type Analyzer interface {
@@ -124,6 +125,24 @@ func (e *Engine) Parse() ([]InsightData, error) {
 		}
 
 		e.state.CurrentTick = p.CurrentFrame()
+
+		// Update live enemy count for the target player's team perspective.
+		liveEnemies := 0
+		var targetTeam int
+		for _, participant := range p.GameState().Participants().Playing() {
+			if participant.Name == e.targetPlayer {
+				targetTeam = int(participant.Team)
+				break
+			}
+		}
+		if targetTeam != 0 {
+			for _, participant := range p.GameState().Participants().Playing() {
+				if int(participant.Team) != targetTeam && participant.IsAlive() {
+					liveEnemies++
+				}
+			}
+		}
+		e.state.LiveEnemyCount = liveEnemies
 
 		for _, a := range e.analyzers {
 			a.OnTickDone(e.state)

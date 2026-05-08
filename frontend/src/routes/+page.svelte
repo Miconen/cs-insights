@@ -126,18 +126,17 @@
         return result;
     }
 
-    // Track which clusters are expanded by a stable key (Round-Tick of lead).
-    let openKeys = new Set<string>();
+    // Track which clusters are expanded. Use a plain Record for Svelte 5 reactivity.
+    let openKeys: Record<string, boolean> = {};
 
     function clusterKey(c: Cluster) { return `${c.lead.Round}-${c.lead.Tick}`; }
 
     function toggleCluster(c: Cluster) {
         const key = clusterKey(c);
-        if (openKeys.has(key)) openKeys.delete(key); else openKeys.add(key);
-        openKeys = new Set(openKeys); // trigger reactivity
+        openKeys = { ...openKeys, [key]: !openKeys[key] };
     }
 
-    function isOpen(c: Cluster) { return openKeys.has(clusterKey(c)); }
+    function isOpen(c: Cluster) { return !!openKeys[clusterKey(c)]; }
 
     function copytick(tick: number, btn: HTMLElement) {
         navigator.clipboard.writeText(`demo_gototick ${tick}`);
@@ -414,91 +413,97 @@
         min-width: 0;
         display: flex;
         flex-direction: column;
-        gap: var(--space-3);
-        padding: var(--space-4);
+        gap: var(--space-2);
+        padding: var(--space-3) var(--space-4);
     }
 
     .incident-head {
         display: flex;
         justify-content: space-between;
-        align-items: flex-start;
+        align-items: baseline;
         gap: var(--space-3);
     }
 
     .incident-title {
         display: flex;
-        flex-direction: column;
-        gap: 0.2rem;
+        align-items: baseline;
+        gap: var(--space-2);
+        flex-wrap: wrap;
         min-width: 0;
     }
 
     .incident-type {
         font-weight: 700;
-        font-size: 0.95rem;
+        font-size: 0.88rem;
+        text-transform: uppercase;
+        letter-spacing: 0.04em;
     }
 
     .incident-coords {
         flex-shrink: 0;
         white-space: nowrap;
+        font-size: 0.72rem;
     }
 
     .incident-desc {
         margin: 0;
-        font-size: 0.9rem;
+        font-size: 0.85rem;
+        line-height: 1.4;
     }
 
     .incident-footer {
         display: flex;
         flex-wrap: wrap;
         gap: var(--space-2);
-        margin-top: var(--space-1);
+        padding-top: var(--space-1);
     }
 
     .cluster-toggle {
         background: transparent;
         border-color: var(--color-border);
         color: var(--color-text-muted);
-        font-size: 0.75rem;
+        font-size: 0.72rem;
     }
 
     .cluster-children {
         border-top: 1px solid var(--color-border);
-        padding-top: var(--space-3);
+        padding-top: var(--space-2);
         display: flex;
         flex-direction: column;
-        gap: var(--space-3);
+        gap: var(--space-2);
     }
 
     .cluster-child {
         display: flex;
         flex-direction: column;
-        gap: var(--space-2);
+        gap: var(--space-1);
         background: var(--color-surface-2);
-        border-radius: var(--radius);
-        padding: var(--space-3);
+        border-radius: var(--radius-sm);
+        padding: var(--space-2) var(--space-3);
     }
 
     .small-chip {
-        font-size: 0.7rem;
+        font-size: 0.68rem;
         height: auto;
-        padding: 0.15rem 0.5rem;
+        padding: 0.1rem 0.4rem;
+        margin-top: var(--space-1);
     }
 
     /* ---- Duel timeline ---- */
     .duel-timeline {
         background: var(--color-surface-2);
-        border-radius: var(--radius);
-        padding: var(--space-3);
+        border-radius: var(--radius-sm);
+        padding: var(--space-2) var(--space-3);
         display: flex;
         flex-direction: column;
-        gap: 0.25rem;
+        gap: 0.2rem;
     }
 
     .timeline-row {
         display: flex;
-        gap: var(--space-3);
+        gap: var(--space-2);
         font-family: var(--font-mono);
-        font-size: 0.82rem;
+        font-size: 0.78rem;
         color: var(--color-text-muted);
     }
 
@@ -513,11 +518,11 @@
     }
 
     .timeline-note {
-        font-size: 0.8rem;
+        font-size: 0.76rem;
         color: var(--color-text-muted);
-        margin-top: var(--space-1);
+        margin-top: 0.2rem;
         border-top: 1px solid var(--color-border);
-        padding-top: var(--space-1);
+        padding-top: 0.2rem;
     }
 
     @media (max-width: 639px) {

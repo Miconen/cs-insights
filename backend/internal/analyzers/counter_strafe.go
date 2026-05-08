@@ -6,9 +6,9 @@ import (
 
 	"cs-insights/internal/config"
 	"cs-insights/internal/parser"
+	"github.com/golang/geo/r3"
 	"github.com/markus-wa/demoinfocs-golang/v5/pkg/demoinfocs/common"
 	events "github.com/markus-wa/demoinfocs-golang/v5/pkg/demoinfocs/events"
-	"github.com/golang/geo/r3"
 )
 
 type CounterStrafeAnalyzer struct {
@@ -49,6 +49,10 @@ func (a *CounterStrafeAnalyzer) OnEvent(event interface{}, state *parser.GameSta
 			return
 		}
 
+		if state.LiveEnemyCount == 0 {
+			return
+		}
+
 		// Use the speed calculated in OnTickDone
 		if a.speed2D > a.cfg.MaxVelocityThreshold {
 			// Check if there is an enemy roughly in front of them to ensure it's an actual engagement
@@ -64,10 +68,10 @@ func (a *CounterStrafeAnalyzer) OnEvent(event interface{}, state *parser.GameSta
 				}
 
 				pitch, yaw := calculateAngles(shooterEyes, p.Position())
-				
+
 				pDiff := math.Abs(float64(e.Shooter.ViewDirectionX() - pitch))
 				yDiff := math.Abs(float64(e.Shooter.ViewDirectionY() - yaw))
-				
+
 				if yDiff > 180 {
 					yDiff = 360 - yDiff
 				}
@@ -102,7 +106,7 @@ func (a *CounterStrafeAnalyzer) OnTickDone(state *parser.GameState) {
 		distX := currPos.X - a.lastPos.X
 		distY := currPos.Y - a.lastPos.Y
 		dist := math.Sqrt(float64(distX*distX + distY*distY))
-		
+
 		// Speed in units/sec = distance * tickRate
 		a.speed2D = dist * state.Parser.TickRate()
 	}

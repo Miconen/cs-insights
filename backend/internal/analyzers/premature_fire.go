@@ -34,8 +34,19 @@ func (a *PrematureFireAnalyzer) OnEvent(event interface{}, state *parser.GameSta
 		if e.Shooter == nil || e.Shooter.Name != a.targetPlayer {
 			return
 		}
-		
+
 		if e.Weapon.Class() == common.EqClassGrenade || e.Weapon.Class() == common.EqClassEquipment {
+			return
+		}
+
+		// Single-shot weapons (AWP, Scout, Deagle) missing is just a miss, not a premature fire.
+		switch e.Weapon.Type {
+		case common.EqAWP, common.EqSSG08, common.EqDeagle:
+			return
+		}
+
+		// Don't count if all enemies are already dead.
+		if state.LiveEnemyCount == 0 {
 			return
 		}
 
@@ -52,10 +63,10 @@ func (a *PrematureFireAnalyzer) OnEvent(event interface{}, state *parser.GameSta
 				continue
 			}
 			pitch, yaw := calculateAngles(shooterEyes, p.Position())
-			
+
 			pitchDiff := math.Abs(float64(e.Shooter.ViewDirectionX() - pitch))
 			yawDiff := math.Abs(float64(e.Shooter.ViewDirectionY() - yaw))
-			
+
 			if yawDiff > 180 {
 				yawDiff = 360 - yawDiff
 			}

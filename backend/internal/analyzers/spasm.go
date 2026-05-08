@@ -45,6 +45,10 @@ func (a *SpasmAnalyzer) OnEvent(event interface{}, state *parser.GameState) {
 			return
 		}
 
+		if state.LiveEnemyCount == 0 {
+			return
+		}
+
 		// When they shoot, analyze the last 0.5 seconds of mouse movement
 		a.analyzeHistoryForSpasms(state)
 	}

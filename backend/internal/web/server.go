@@ -217,25 +217,33 @@ func (s *Server) handleInsightsAPI(w http.ResponseWriter, r *http.Request) {
 	// Generate Actionable Advice (now plain text, frontend handles HTML)
 	var advice []string
 
-	if lostDuels > 0 {
-		avgDiff := 0
+	totalGunfights := counts["Gunfight"]
+	if lostDuels > 0 && totalGunfights > 0 {
+		lossRate := int(float64(lostDuels) / float64(totalGunfights) * 100)
 		if totalTTDDiff > 0 {
-			avgDiff = int(totalTTDDiff / float64(lostDuels))
-			advice = append(advice, fmt.Sprintf("Gunfights: You lost %d duels. In the fights where you both dealt damage, you were on average %dms slower to deal damage than the enemy.", lostDuels, avgDiff))
+			avgDiff := int(totalTTDDiff / float64(lostDuels))
+			advice = append(advice, fmt.Sprintf("Gunfights: You lost %d of %d tracked duels (%d%%). In fights where you both dealt damage, you were on average %dms slower to deal damage than the enemy.", lostDuels, totalGunfights, lossRate, avgDiff))
+		} else {
+			advice = append(advice, fmt.Sprintf("Gunfights: You lost %d of %d tracked duels (%d%%).", lostDuels, totalGunfights, lossRate))
 		}
 	}
 
-	if counts["MovementError"] > 5 {
-		advice = append(advice, "Counter-Strafing: You are firing while moving too fast in several engagements. Focus on completely releasing your movement keys (W/A/S/D) and tapping the opposite direction right before you click.")
+	if n := counts["MovementError"]; n > 0 {
+		advice = append(advice, fmt.Sprintf("Counter-Strafing: You fired while moving too fast in %d engagements. Release movement keys and tap the opposite direction before clicking.", n))
 	}
-	if counts["PrematureFire"] > 5 {
-		advice = append(advice, "Premature Firing: You are clicking your mouse before your crosshair reaches the target. Try to consciously delay your trigger finger by a fraction of a second when flicking.")
+	if n := counts["PrematureFire"]; n > 0 {
+		advice = append(advice, fmt.Sprintf("Premature Firing: You clicked before your crosshair reached the target %d times. Delay your trigger finger a fraction of a second when flicking.", n))
 	}
-	if counts["Spasm"] > 3 {
-		advice = append(advice, "Aim Spasming: High erratic crosshair movement detected before shooting. You might be tensing your arm or panicking when an enemy appears. Focus on keeping your grip relaxed.")
+	if n := counts["Spasm"]; n > 0 {
+		advice = append(advice, fmt.Sprintf("Aim Spasming: Erratic crosshair movement before shooting detected %d times. Keep your grip relaxed and avoid tensing when you see an enemy.", n))
 	}
-	if counts["PoorSpray"] > 3 {
-		advice = append(advice, "Spray Control: Your spray efficiency is dropping below 20%. Spend some time in a recoil control map or switch to bursting/tapping at medium to long ranges.")
+	if n := counts["PoorSpray"]; n > 0 {
+		alt := counts["SprayConfidence"]
+		if alt > 0 {
+			advice = append(advice, fmt.Sprintf("Spray Control: %d inefficient sprays and %d overconfident long-range sprays detected. Spend time on a recoil control map, or switch to bursting and tapping at longer ranges.", n, alt))
+		} else {
+			advice = append(advice, fmt.Sprintf("Spray Control: %d inefficient sprays detected (under 20%% hit rate). Practise recoil control or switch to burst/tap at medium-to-long range.", n))
+		}
 	}
 
 	// Collapse duplicate PrematureFire events in the same round
