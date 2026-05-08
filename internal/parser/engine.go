@@ -59,6 +59,7 @@ func (e *Engine) Parse() ([]InsightData, error) {
 	// Error handling config for panic recovery during parsing
 	cfg := demoinfocs.DefaultParserConfig
 	cfg.IgnoreErrBombsiteIndexNotFound = true
+	cfg.IgnorePacketEntitiesPanic = true
 	
 	p := demoinfocs.NewParserWithConfig(f, cfg)
 	defer p.Close()
