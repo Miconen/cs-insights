@@ -9,6 +9,7 @@ import (
 	"cs-insights/internal/analyzers"
 	"cs-insights/internal/config"
 	"cs-insights/internal/db"
+	"cs-insights/internal/fetcher"
 	"cs-insights/internal/parser"
 	"cs-insights/internal/web"
 )
@@ -19,6 +20,11 @@ func main() {
 	serve := flag.Bool("serve", false, "Start the web dashboard")
 	dbPath := flag.String("db", "insights.db", "Path to SQLite database")
 	clearDb := flag.Bool("clear", false, "Clear all previous insights from the database before running")
+	
+	// Fetching flags
+	steamID := flag.String("steam_id", "", "Steam ID or Custom URL (to fetch demos automatically from Matchmaking)")
+	cookie := flag.String("cookie", "", "steamLoginSecure cookie value (required for fetching)")
+	fetchLimit := flag.Int("limit", 1, "Number of recent matches to fetch")
 
 	flag.Parse()
 
@@ -34,7 +40,7 @@ func main() {
 		}
 		log.Println("Successfully cleared previous insights from the database.")
 		// If they only wanted to clear, they might not have provided a demo.
-		if *demoPath == "" && !*serve {
+		if *demoPath == "" && *steamID == "" && !*serve {
 			return
 		}
 	}
@@ -48,10 +54,25 @@ func main() {
 		return
 	}
 
-	if *demoPath == "" || *playerName == "" {
+	if (*demoPath == "" && *steamID == "") || *playerName == "" {
 		fmt.Println("Usage: cs-insights --demo=<path.dem> --player=\"Name\"")
+		fmt.Println("   Or: cs-insights --steam_id=<id> --cookie=\"...\" --player=\"Name\"")
 		fmt.Println("   Or: cs-insights --serve")
 		os.Exit(1)
+	}
+
+	var demosToParse []string
+	if *demoPath != "" {
+		demosToParse = append(demosToParse, *demoPath)
+	} else if *steamID != "" && *cookie != "" {
+		log.Printf("Fetching up to %d recent matches for Steam ID %s...", *fetchLimit, *steamID)
+		fetched, err := fetcher.FetchRecentMatches(*steamID, *cookie, *fetchLimit, "demos")
+		if err != nil {
+			log.Fatalf("Failed to fetch matches: %v", err)
+		}
+		demosToParse = fetched
+	} else if *steamID != "" && *cookie == "" {
+		log.Fatalf("You must provide --cookie=\"your_steamLoginSecure_cookie\" to fetch matches.")
 	}
 
 	cfg, err := config.LoadConfig("config.json")
@@ -60,41 +81,44 @@ func main() {
 		cfg = config.DefaultConfig()
 	}
 
-	log.Printf("Starting analysis on %s for player %s", *demoPath, *playerName)
+	for _, dp := range demosToParse {
+		log.Printf("Starting analysis on %s for player %s", dp, *playerName)
 
-	engine := parser.NewEngine(*demoPath, *playerName)
+		engine := parser.NewEngine(dp, *playerName)
 
-	// Register V1 & V2 Analyzers
-	engine.AddAnalyzer(analyzers.NewPrematureFireAnalyzer(*playerName, cfg.Analyzers.PrematureFire))
-	engine.AddAnalyzer(analyzers.NewSpasmAnalyzer(*playerName, cfg.Analyzers.Spasm))
-	engine.AddAnalyzer(analyzers.NewSprayAnalyzer(*playerName, cfg.Analyzers.Spray))
-	engine.AddAnalyzer(analyzers.NewCounterStrafeAnalyzer(*playerName, cfg.Analyzers.CounterStrafe))
-	engine.AddAnalyzer(analyzers.NewGunfightAnalyzer(*playerName))
+		// Register V1 & V2 Analyzers
+		engine.AddAnalyzer(analyzers.NewPrematureFireAnalyzer(*playerName, cfg.Analyzers.PrematureFire))
+		engine.AddAnalyzer(analyzers.NewSpasmAnalyzer(*playerName, cfg.Analyzers.Spasm))
+		engine.AddAnalyzer(analyzers.NewSprayAnalyzer(*playerName, cfg.Analyzers.Spray))
+		engine.AddAnalyzer(analyzers.NewCounterStrafeAnalyzer(*playerName, cfg.Analyzers.CounterStrafe))
+		engine.AddAnalyzer(analyzers.NewGunfightAnalyzer(*playerName))
 
-	log.Println("Parsing demo (this may take a minute)...")
-	insights, err := engine.Parse()
-	if err != nil {
-		log.Fatalf("Error parsing demo: %v", err)
-	}
-
-	log.Printf("Parsing complete. Found %d insights.", len(insights))
-
-	// Save to DB
-	for _, i := range insights {
-		err := database.SaveInsight(db.Insight{
-			PlayerName:  *playerName,
-			MatchName:   *demoPath,
-			Round:       i.Round,
-			Tick:        i.Tick,
-			Type:        i.Type,
-			Severity:    i.Severity,
-			Description: i.Description,
-			Metadata:    i.Metadata,
-		})
+		log.Println("Parsing demo (this may take a minute)...")
+		insights, err := engine.Parse()
 		if err != nil {
-			log.Printf("Failed to save insight: %v", err)
+			log.Printf("Error parsing demo %s: %v", dp, err)
+			continue
+		}
+
+		log.Printf("Parsing complete for %s. Found %d insights.", dp, len(insights))
+
+		// Save to DB
+		for _, i := range insights {
+			err := database.SaveInsight(db.Insight{
+				PlayerName:  *playerName,
+				MatchName:   dp,
+				Round:       i.Round,
+				Tick:        i.Tick,
+				Type:        i.Type,
+				Severity:    i.Severity,
+				Description: i.Description,
+				Metadata:    i.Metadata,
+			})
+			if err != nil {
+				log.Printf("Failed to save insight: %v", err)
+			}
 		}
 	}
 
-	log.Println("Insights saved to database. Run with --serve to view them.")
+	log.Println("All analyses complete. Insights saved to database. Run with --serve to view them.")
 }
