@@ -1,0 +1,18 @@
+{
+  "analyzers": {
+    "premature_fire": {
+      "max_engagement_angle": 15.0,
+      "reaction_time_max_ms": 500.0
+    },
+    "spasm": {
+      "variance_threshold": 15.0,
+      "min_zig_zags": 4
+    },
+    "counter_strafe": {
+      "max_velocity_threshold": 34.0
+    },
+    "crosshair_height": {
+      "max_vertical_distance": 10.0
+    }
+  }
+}

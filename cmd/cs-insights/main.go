@@ -7,6 +7,7 @@ import (
 	"os"
 
 	"cs-insights/internal/analyzers"
+	"cs-insights/internal/config"
 	"cs-insights/internal/db"
 	"cs-insights/internal/parser"
 	"cs-insights/internal/web"
@@ -40,14 +41,22 @@ func main() {
 		os.Exit(1)
 	}
 
+	cfg, err := config.LoadConfig("config.json")
+	if err != nil {
+		log.Printf("Warning: Failed to load config.json, using defaults: %v", err)
+		cfg = config.DefaultConfig()
+	}
+
 	log.Printf("Starting analysis on %s for player %s", *demoPath, *playerName)
 
 	engine := parser.NewEngine(*demoPath, *playerName)
 
-	// Register V1 Analyzers
-	engine.AddAnalyzer(analyzers.NewPrematureFireAnalyzer(*playerName))
-	engine.AddAnalyzer(analyzers.NewSpasmAnalyzer(*playerName))
+	// Register V1 & V2 Analyzers
+	engine.AddAnalyzer(analyzers.NewPrematureFireAnalyzer(*playerName, cfg.Analyzers.PrematureFire))
+	engine.AddAnalyzer(analyzers.NewSpasmAnalyzer(*playerName, cfg.Analyzers.Spasm))
 	engine.AddAnalyzer(analyzers.NewSprayAnalyzer(*playerName))
+	engine.AddAnalyzer(analyzers.NewCounterStrafeAnalyzer(*playerName, cfg.Analyzers.CounterStrafe))
+	engine.AddAnalyzer(analyzers.NewCrosshairPlacementAnalyzer(*playerName, cfg.Analyzers.CrosshairHeight))
 
 	log.Println("Parsing demo (this may take a minute)...")
 	insights, err := engine.Parse()

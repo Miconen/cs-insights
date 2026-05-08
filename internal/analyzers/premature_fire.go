@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"math"
 
+	"cs-insights/internal/config"
 	"cs-insights/internal/parser"
 	"github.com/markus-wa/demoinfocs-golang/v5/pkg/demoinfocs/common"
 	events "github.com/markus-wa/demoinfocs-golang/v5/pkg/demoinfocs/events"
@@ -12,16 +13,21 @@ import (
 
 type PrematureFireAnalyzer struct {
 	targetPlayer string
+	cfg          config.PrematureFireConfig
 	insights     []parser.InsightData
 	
-	// Map to track when an enemy was first spotted by the target player
 	// Key: Enemy UserID, Value: Tick when spotted
 	spottedEnemies map[int]int
+
+	// Track last tick angles to calculate velocity for reaction time
+	lastPitch float32
+	lastYaw   float32
 }
 
-func NewPrematureFireAnalyzer(targetPlayer string) *PrematureFireAnalyzer {
+func NewPrematureFireAnalyzer(targetPlayer string, cfg config.PrematureFireConfig) *PrematureFireAnalyzer {
 	return &PrematureFireAnalyzer{
 		targetPlayer:   targetPlayer,
+		cfg:            cfg,
 		spottedEnemies: make(map[int]int),
 	}
 }
@@ -32,28 +38,15 @@ func (a *PrematureFireAnalyzer) Name() string {
 
 func (a *PrematureFireAnalyzer) OnEvent(event interface{}, state *parser.GameState) {
 	switch e := event.(type) {
-	
-	case events.PlayerSpottersChanged:
-		// If our target player spotted an enemy
-		if e.Spotted != nil && e.Spotted.IsAlive() && !e.Spotted.IsBot {
-			// e.Spotted is the player being spotted.
-			// Who spotted them? We need to check if our target player is among the spotters.
-			// Currently, demoinfocs doesn't easily expose exactly *who* triggered the spot in this event payload cleanly 
-			// without checking game state or radar. For a rough approximation, we can track proximity or FOV in OnTickDone instead.
-			// Let's implement FOV checking in OnTickDone for better accuracy.
-		}
-
 	case events.WeaponFire:
 		if e.Shooter == nil || e.Shooter.Name != a.targetPlayer {
 			return
 		}
 		
-		// If it's not a bullet weapon (e.g. knife, grenade), ignore
 		if e.Weapon.Class() == common.EqClassGrenade || e.Weapon.Class() == common.EqClassEquipment {
 			return
 		}
 
-		// Find the closest visible enemy to see if they are shooting at them
 		var closestEnemy *common.Player
 		minAngle := math.MaxFloat64
 
@@ -62,15 +55,15 @@ func (a *PrematureFireAnalyzer) OnEvent(event interface{}, state *parser.GameSta
 				continue
 			}
 
-			// Calculate angular distance
-			shooterEyes, _ := e.Shooter.PositionEyes()
+			shooterEyes, ok := e.Shooter.PositionEyes()
+			if !ok {
+				continue
+			}
 			pitch, yaw := calculateAngles(shooterEyes, p.Position())
 			
-			// Difference in angles
 			pitchDiff := math.Abs(float64(e.Shooter.ViewDirectionX() - pitch))
 			yawDiff := math.Abs(float64(e.Shooter.ViewDirectionY() - yaw))
 			
-			// Normalize yaw diff (handle 360 wrap around)
 			if yawDiff > 180 {
 				yawDiff = 360 - yawDiff
 			}
@@ -84,9 +77,13 @@ func (a *PrematureFireAnalyzer) OnEvent(event interface{}, state *parser.GameSta
 		}
 
 		if closestEnemy != nil {
-			// Threshold: If angle diff is > 15 degrees, it's a premature fire
-			// Note: We'd want to correlate this with if they eventually hit or moved crosshair there
-			if minAngle > 15.0 {
+			// If angle is > MaxEngagementAngle, we assume they are spamming/wallbanging, not targeting this enemy.
+			if minAngle > a.cfg.MaxEngagementAngle {
+				return
+			}
+
+			// Premature Fire threshold: > 3 degrees (clear flick happening) but shot fired
+			if minAngle > 3.0 && minAngle <= a.cfg.MaxEngagementAngle {
 				a.insights = append(a.insights, parser.InsightData{
 					Round:       state.CurrentRound,
 					Tick:        state.CurrentTick,
@@ -95,58 +92,77 @@ func (a *PrematureFireAnalyzer) OnEvent(event interface{}, state *parser.GameSta
 					Description: fmt.Sprintf("Fired shot while crosshair was %.1f degrees away from target (%s)", minAngle, closestEnemy.Name),
 				})
 			}
-			
-			// Check Reaction time if we have spotted them recently
-			if spottedTick, ok := a.spottedEnemies[closestEnemy.UserID]; ok {
-				tickDiff := state.CurrentTick - spottedTick
-				timeDiffMs := float64(tickDiff) * (1000.0 / state.Parser.TickRate())
-				
-				if timeDiffMs > 500 { // If it took more than 500ms to shoot
-					a.insights = append(a.insights, parser.InsightData{
-						Round:       state.CurrentRound,
-						Tick:        state.CurrentTick,
-						Type:        "SlowReaction",
-						Severity:    "Low",
-						Description: fmt.Sprintf("Reaction time of %.0fms before first shot at %s", timeDiffMs, closestEnemy.Name),
-					})
-				}
-				
-				// Clear the spotted timer so we don't trigger reaction time again for subsequent shots in the same burst
-				delete(a.spottedEnemies, closestEnemy.UserID)
-			}
 		}
 	}
 }
 
 func (a *PrematureFireAnalyzer) OnTickDone(state *parser.GameState) {
-	// Let's manually calculate if an enemy entered our target's FOV
 	targetPlayer := getPlayerByName(state, a.targetPlayer)
 	if targetPlayer == nil || !targetPlayer.IsAlive() {
 		return
 	}
+
+	currPitch := targetPlayer.ViewDirectionX()
+	currYaw := targetPlayer.ViewDirectionY()
+
+	pitchDiff := math.Abs(float64(currPitch - a.lastPitch))
+	yawDiff := math.Abs(float64(currYaw - a.lastYaw))
+	if yawDiff > 180 {
+		yawDiff = 360 - yawDiff
+	}
+	velocity := pitchDiff + yawDiff
+
+	// If there's a significant mouse movement, check if it's a reaction to any spotted enemy
+	if velocity > 1.0 { // 1.0 degree per tick is a solid flick start
+		for enemyID, spottedTick := range a.spottedEnemies {
+			tickDiff := state.CurrentTick - spottedTick
+			if tickDiff > 0 {
+				timeDiffMs := float64(tickDiff) * (1000.0 / state.Parser.TickRate())
+				
+				if timeDiffMs > a.cfg.ReactionTimeMaxMs {
+					a.insights = append(a.insights, parser.InsightData{
+						Round:       state.CurrentRound,
+						Tick:        state.CurrentTick,
+						Type:        "SlowReaction",
+						Severity:    "Low",
+						Description: fmt.Sprintf("Slow reaction time: %.0fms before initiating aim movement", timeDiffMs),
+					})
+				}
+				// We handled the reaction for this enemy, remove from map
+				delete(a.spottedEnemies, enemyID)
+			}
+		}
+	}
+
+	a.lastPitch = currPitch
+	a.lastYaw = currYaw
 
 	for _, p := range state.Parser.GameState().Participants().Playing() {
 		if p.Team == targetPlayer.Team || !p.IsAlive() {
 			continue
 		}
 
-		targetEyes, _ := targetPlayer.PositionEyes()
+		targetEyes, ok := targetPlayer.PositionEyes()
+		if !ok {
+			continue
+		}
+
 		pitch, yaw := calculateAngles(targetEyes, p.Position())
 		
-		pitchDiff := math.Abs(float64(targetPlayer.ViewDirectionX() - pitch))
-		yawDiff := math.Abs(float64(targetPlayer.ViewDirectionY() - yaw))
+		pDiff := math.Abs(float64(targetPlayer.ViewDirectionX() - pitch))
+		yDiff := math.Abs(float64(targetPlayer.ViewDirectionY() - yaw))
 		
-		if yawDiff > 180 {
-			yawDiff = 360 - yawDiff
+		if yDiff > 180 {
+			yDiff = 360 - yDiff
 		}
 
 		// Simple FOV check: if enemy is within 45 degrees of center view
-		if pitchDiff < 45 && yawDiff < 45 {
+		if pDiff < 45 && yDiff < 45 {
 			if _, exists := a.spottedEnemies[p.UserID]; !exists {
 				a.spottedEnemies[p.UserID] = state.CurrentTick
 			}
 		} else {
-			// If they leave FOV, reset the timer so we can track reaction time again next time they appear
+			// If they leave FOV, reset
 			delete(a.spottedEnemies, p.UserID)
 		}
 	}
@@ -156,7 +172,6 @@ func (a *PrematureFireAnalyzer) GetInsights() []parser.InsightData {
 	return a.insights
 }
 
-// Helper to find player
 func getPlayerByName(state *parser.GameState, name string) *common.Player {
 	for _, p := range state.Parser.GameState().Participants().Playing() {
 		if p.Name == name {
@@ -166,7 +181,6 @@ func getPlayerByName(state *parser.GameState, name string) *common.Player {
 	return nil
 }
 
-// calculateAngles calculates pitch and yaw from pos1 to pos2
 func calculateAngles(pos1, pos2 r3.Vector) (pitch, yaw float32) {
 	delta := r3.Vector{
 		X: pos2.X - pos1.X,

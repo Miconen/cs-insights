@@ -4,12 +4,14 @@ import (
 	"fmt"
 	"math"
 
+	"cs-insights/internal/config"
 	"cs-insights/internal/parser"
 	"github.com/markus-wa/demoinfocs-golang/v5/pkg/demoinfocs/events"
 )
 
 type SpasmAnalyzer struct {
 	targetPlayer string
+	cfg          config.SpasmConfig
 	insights     []parser.InsightData
 
 	// Track pitch/yaw history for the target player
@@ -24,9 +26,10 @@ type viewAngles struct {
 	yaw   float32
 }
 
-func NewSpasmAnalyzer(targetPlayer string) *SpasmAnalyzer {
+func NewSpasmAnalyzer(targetPlayer string, cfg config.SpasmConfig) *SpasmAnalyzer {
 	return &SpasmAnalyzer{
 		targetPlayer: targetPlayer,
+		cfg:          cfg,
 		head:         0,
 	}
 }
@@ -103,7 +106,7 @@ func (a *SpasmAnalyzer) analyzeHistoryForSpasms(state *parser.GameState) {
 	}
 
 	// Thresholds for spasming/tensing
-	if zigzags > 4 && totalVariance > 15.0 {
+	if zigzags >= a.cfg.MinZigZags && totalVariance > float32(a.cfg.VarianceThreshold) {
 		a.insights = append(a.insights, parser.InsightData{
 			Round:       state.CurrentRound,
 			Tick:        state.CurrentTick,

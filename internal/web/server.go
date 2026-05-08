@@ -2,9 +2,11 @@ package web
 
 import (
 	"cs-insights/internal/db"
+	"encoding/json"
 	"html/template"
 	"log"
 	"net/http"
+	"sort"
 )
 
 type Server struct {
@@ -22,10 +24,17 @@ func (s *Server) Start(addr string) error {
 	return http.ListenAndServe(addr, nil)
 }
 
+type DashboardData struct {
+	PlayerName     string
+	Insights       []db.Insight
+	Advice         []string
+	ChartLabelsRaw string
+	ChartDataRaw   string
+}
+
 func (s *Server) handleDashboard(w http.ResponseWriter, r *http.Request) {
 	playerName := r.URL.Query().Get("player")
 	if playerName == "" {
-		// Provide a simple default view or ask for player name
 		tmpl := template.Must(template.New("index").Parse(indexTmpl))
 		tmpl.Execute(w, nil)
 		return
@@ -37,12 +46,58 @@ func (s *Server) handleDashboard(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	data := struct {
-		PlayerName string
-		Insights   []db.Insight
-	}{
-		PlayerName: playerName,
-		Insights:   insights,
+	// Aggregate Data
+	counts := make(map[string]int)
+	for _, i := range insights {
+		counts[i.Type]++
+	}
+
+	// Prepare Chart Data
+	var labels []string
+	var dataVals []int
+	for k, v := range counts {
+		labels = append(labels, k)
+		dataVals = append(dataVals, v)
+	}
+	
+	labelsJSON, _ := json.Marshal(labels)
+	dataJSON, _ := json.Marshal(dataVals)
+
+	// Generate Actionable Advice
+	var advice []string
+	if counts["MovementError"] > 5 {
+		advice = append(advice, "🛑 Counter-Strafing: You are firing while moving too fast in several engagements. Focus on completely releasing your movement keys (W/A/S/D) and tapping the opposite direction right before you click.")
+	}
+	if counts["PrematureFire"] > 5 {
+		advice = append(advice, "⏱️ Premature Firing: You are clicking your mouse before your crosshair reaches the target. Try to consciously delay your trigger finger by a fraction of a second when flicking.")
+	}
+	if counts["Spasm"] > 3 {
+		advice = append(advice, "🧘 Aim Spasming: High erratic crosshair movement detected before shooting. You might be tensing your arm or panicking when an enemy appears. Focus on keeping your grip relaxed.")
+	}
+	if counts["CrosshairPlacement"] > 5 {
+		advice = append(advice, "📏 Crosshair Placement: You are consistently having to adjust your aim vertically (aiming at chest/feet). Practice resting your crosshair at head height when peeking corners.")
+	}
+	if counts["PoorSpray"] > 3 {
+		advice = append(advice, "🔫 Spray Control: Your spray efficiency is dropping below 20%. Spend some time in a recoil control map or switch to bursting/tapping at medium to long ranges.")
+	}
+	if counts["SlowReaction"] > 5 {
+		advice = append(advice, "🐢 Slow Reaction: It's taking you a while to initiate aim movement after spotting an enemy. Ensure you are focused and not resting your eyes in passive positions.")
+	}
+
+	// Sort insights by Tick/Round descending
+	sort.Slice(insights, func(i, j int) bool {
+		if insights[i].Round == insights[j].Round {
+			return insights[i].Tick > insights[j].Tick
+		}
+		return insights[i].Round > insights[j].Round
+	})
+
+	data := DashboardData{
+		PlayerName:     playerName,
+		Insights:       insights,
+		Advice:         advice,
+		ChartLabelsRaw: string(labelsJSON),
+		ChartDataRaw:   string(dataJSON),
 	}
 
 	tmpl := template.Must(template.New("dashboard").Parse(dashboardTmpl))
@@ -58,15 +113,15 @@ const indexTmpl = `
     <title>CS Insights</title>
     <script src="https://cdn.tailwindcss.com"></script>
 </head>
-<body class="bg-gray-100 h-screen flex items-center justify-center">
-    <div class="bg-white p-8 rounded-lg shadow-md w-96">
-        <h1 class="text-2xl font-bold mb-4">CS Insights Dashboard</h1>
+<body class="bg-slate-900 h-screen flex items-center justify-center">
+    <div class="bg-slate-800 p-8 rounded-xl shadow-2xl w-96 border border-slate-700">
+        <h1 class="text-3xl font-bold mb-6 text-white text-center">CS Insights</h1>
         <form action="/" method="GET" class="space-y-4">
             <div>
-                <label for="player" class="block text-sm font-medium text-gray-700">Enter Player Name</label>
-                <input type="text" name="player" id="player" class="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-indigo-500 focus:ring-indigo-500 sm:text-sm p-2 border" placeholder="e.g. s1mple">
+                <label for="player" class="block text-sm font-medium text-slate-300 mb-2">Enter Player Name</label>
+                <input type="text" name="player" id="player" class="block w-full rounded-md border-0 py-2.5 px-3 text-gray-900 shadow-sm ring-1 ring-inset ring-gray-300 placeholder:text-gray-400 focus:ring-2 focus:ring-inset focus:ring-indigo-600 sm:text-sm sm:leading-6 bg-slate-100" placeholder="e.g. s1mple">
             </div>
-            <button type="submit" class="w-full flex justify-center py-2 px-4 border border-transparent rounded-md shadow-sm text-sm font-medium text-white bg-indigo-600 hover:bg-indigo-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-indigo-500">
+            <button type="submit" class="w-full flex justify-center py-2.5 px-4 border border-transparent rounded-md shadow-sm text-sm font-bold text-white bg-indigo-600 hover:bg-indigo-500 transition-colors focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-indigo-500">
                 View Insights
             </button>
         </form>
@@ -83,41 +138,119 @@ const dashboardTmpl = `
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Insights: {{.PlayerName}}</title>
     <script src="https://cdn.tailwindcss.com"></script>
+    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
 </head>
-<body class="bg-gray-50 text-gray-900 font-sans">
-    <div class="max-w-4xl mx-auto py-10 px-4 sm:px-6 lg:px-8">
-        <div class="mb-8">
-            <h1 class="text-3xl font-bold">Performance Insights</h1>
-            <p class="text-gray-500">Analysis for <span class="font-semibold">{{.PlayerName}}</span></p>
+<body class="bg-slate-50 text-slate-900 font-sans">
+    <div class="max-w-6xl mx-auto py-10 px-4 sm:px-6 lg:px-8">
+        <div class="mb-8 flex justify-between items-end border-b pb-4">
+            <div>
+                <h1 class="text-4xl font-extrabold tracking-tight text-slate-900">Performance Dashboard</h1>
+                <p class="text-lg text-slate-500 mt-2">Analysis for <span class="font-bold text-indigo-600">{{.PlayerName}}</span></p>
+            </div>
+            <a href="/" class="text-sm font-medium text-indigo-600 hover:text-indigo-500">← Back to Search</a>
         </div>
 
-        <div class="space-y-4">
-            {{if not .Insights}}
-                <div class="bg-white shadow rounded-lg p-6 text-center text-gray-500">
-                    No insights found for this player yet. Run the CLI tool to parse a demo first.
+        {{if not .Insights}}
+            <div class="bg-white shadow rounded-lg p-10 text-center text-slate-500 border border-slate-200">
+                <svg class="mx-auto h-12 w-12 text-slate-400" fill="none" viewBox="0 0 24 24" stroke="currentColor" aria-hidden="true">
+                    <path vector-effect="non-scaling-stroke" stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 13h6m-3-3v6m-9 1V7a2 2 0 012-2h6l2 2h6a2 2 0 012 2v8a2 2 0 01-2 2H5a2 2 0 01-2-2z" />
+                </svg>
+                <h3 class="mt-2 text-sm font-medium text-slate-900">No data found</h3>
+                <p class="mt-1 text-sm text-slate-500">Run the CLI tool to parse a demo for this player first.</p>
+            </div>
+        {{else}}
+
+        <div class="grid grid-cols-1 md:grid-cols-3 gap-8 mb-10">
+            <!-- Advice Column -->
+            <div class="md:col-span-2 space-y-6">
+                <div class="bg-white rounded-xl shadow-sm border border-slate-200 overflow-hidden">
+                    <div class="bg-indigo-600 px-6 py-4">
+                        <h2 class="text-xl font-bold text-white">Coach's Advice</h2>
+                    </div>
+                    <div class="p-6">
+                        {{if .Advice}}
+                            <ul class="space-y-4">
+                                {{range .Advice}}
+                                    <li class="flex gap-4 items-start bg-indigo-50/50 p-4 rounded-lg border border-indigo-100">
+                                        <div class="text-slate-800 leading-relaxed font-medium">{{.}}</div>
+                                    </li>
+                                {{end}}
+                            </ul>
+                        {{else}}
+                            <p class="text-slate-500 text-center py-4">No major habits detected yet. Keep playing!</p>
+                        {{end}}
+                    </div>
                 </div>
-            {{else}}
-                {{range .Insights}}
-                    <div class="bg-white shadow rounded-lg p-4 border-l-4 
-                        {{if eq .Severity "High"}}border-red-500{{else if eq .Severity "Medium"}}border-yellow-500{{else}}border-blue-500{{end}}">
-                        <div class="flex justify-between items-start">
-                            <div>
-                                <span class="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium 
-                                    {{if eq .Severity "High"}}bg-red-100 text-red-800{{else if eq .Severity "Medium"}}bg-yellow-100 text-yellow-800{{else}}bg-blue-100 text-blue-800{{end}}">
-                                    {{.Type}}
-                                </span>
-                                <h3 class="mt-2 text-lg font-medium">{{.Description}}</h3>
-                            </div>
-                            <div class="text-sm text-gray-500 text-right">
-                                <div>Round {{.Round}}</div>
-                                <div class="text-xs">Tick {{.Tick}}</div>
-                            </div>
+            </div>
+
+            <!-- Chart Column -->
+            <div class="bg-white rounded-xl shadow-sm border border-slate-200 p-6 flex flex-col items-center justify-center">
+                <h3 class="text-lg font-bold text-slate-800 w-full text-center mb-4">Habit Profile</h3>
+                <div class="w-full relative" style="height: 250px;">
+                    <canvas id="habitChart"></canvas>
+                </div>
+            </div>
+        </div>
+
+        <h2 class="text-2xl font-bold mb-6 text-slate-800">Raw Incident Log</h2>
+        <div class="space-y-4">
+            {{range .Insights}}
+                <div class="bg-white shadow-sm rounded-lg p-5 border-l-4 border border-y-slate-200 border-r-slate-200
+                    {{if eq .Severity "High"}}border-l-red-500{{else if eq .Severity "Medium"}}border-l-amber-500{{else}}border-l-blue-500{{end}} hover:shadow-md transition-shadow">
+                    <div class="flex justify-between items-start">
+                        <div>
+                            <span class="inline-flex items-center px-2.5 py-1 rounded-full text-xs font-bold uppercase tracking-wider
+                                {{if eq .Severity "High"}}bg-red-100 text-red-800{{else if eq .Severity "Medium"}}bg-amber-100 text-amber-800{{else}}bg-blue-100 text-blue-800{{end}}">
+                                {{.Type}}
+                            </span>
+                            <h3 class="mt-3 text-lg font-medium text-slate-900">{{.Description}}</h3>
+                        </div>
+                        <div class="text-sm text-slate-500 text-right font-medium">
+                            <div class="bg-slate-100 px-3 py-1 rounded-md mb-1">Round {{.Round}}</div>
+                            <div class="text-xs text-slate-400">Tick {{.Tick}}</div>
                         </div>
                     </div>
-                {{end}}
+                </div>
             {{end}}
         </div>
+        {{end}}
     </div>
+
+    {{if .Insights}}
+    <script>
+        const ctx = document.getElementById('habitChart').getContext('2d');
+        const labels = {{.ChartLabelsRaw}};
+        const data = {{.ChartDataRaw}};
+
+        new Chart(ctx, {
+            type: 'polarArea',
+            data: {
+                labels: labels,
+                datasets: [{
+                    data: data,
+                    backgroundColor: [
+                        'rgba(239, 68, 68, 0.7)',
+                        'rgba(245, 158, 11, 0.7)',
+                        'rgba(59, 130, 246, 0.7)',
+                        'rgba(16, 185, 129, 0.7)',
+                        'rgba(139, 92, 246, 0.7)'
+                    ],
+                    borderWidth: 1
+                }]
+            },
+            options: {
+                responsive: true,
+                maintainAspectRatio: false,
+                plugins: {
+                    legend: {
+                        position: 'right',
+                        labels: { boxWidth: 12 }
+                    }
+                }
+            }
+        });
+    </script>
+    {{end}}
 </body>
 </html>
 `
