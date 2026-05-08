@@ -89,12 +89,13 @@ func (s *Server) handleFetchProcessAPI(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// 1. Download & Decompress
-	demPath, err := fetcher.DownloadAndDecompress(req.Link, "demos")
+	// 1. Reuse existing demo if available, otherwise download & decompress.
+	demoFile, err := fetcher.DownloadAndDecompressWithStatus(req.Link, "demos")
 	if err != nil {
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 		return
 	}
+	demPath := demoFile.Path
 
 	// 2. Parse Demo
 	engine := parser.NewEngine(demPath, req.PlayerName)
@@ -129,8 +130,10 @@ func (s *Server) handleFetchProcessAPI(w http.ResponseWriter, r *http.Request) {
 
 	w.Header().Set("Content-Type", "application/json")
 	json.NewEncoder(w).Encode(map[string]interface{}{
-		"status":   "success",
-		"insights": len(insights),
+		"status":     "success",
+		"insights":   len(insights),
+		"downloaded": demoFile.Downloaded,
+		"demo_path":  demPath,
 	})
 }
 

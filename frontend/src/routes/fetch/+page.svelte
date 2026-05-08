@@ -35,12 +35,11 @@
         }
 
         processingLink = match.link;
-        setProcessingStatus(match.link, 'Requesting download...');
+        setProcessingStatus(match.link, match.downloaded ? 'Found local demo. Processing...' : 'Checking local demo...');
 
         const timers = [
-            setTimeout(() => setProcessingStatus(match.link, 'Downloading demo...'), 400),
-            setTimeout(() => setProcessingStatus(match.link, 'Decompressing demo...'), 2500),
-            setTimeout(() => setProcessingStatus(match.link, 'Processing demo...'), 4500),
+            setTimeout(() => setProcessingStatus(match.link, match.downloaded ? 'Processing demo...' : 'Downloading if needed...'), 900),
+            setTimeout(() => setProcessingStatus(match.link, 'Analyzing rounds and gunfights...'), 4500),
             setTimeout(() => setProcessingStatus(match.link, 'Saving insights...'), 10000)
         ];
 
@@ -54,7 +53,8 @@
             const result = await res.json();
 
             matches = matches.map((candidate) => candidate.link === match.link ? { ...candidate, processed: true, downloaded: true } : candidate);
-            setProcessingStatus(match.link, `Done. Saved ${result.insights ?? 0} insights.`);
+            const source = result.downloaded ? 'Downloaded and processed' : 'Reused local demo and processed';
+            setProcessingStatus(match.link, `${source}. Saved ${result.insights ?? 0} insights.`);
         } catch (e: any) {
             setProcessingStatus(match.link, `Failed: ${e.message}`);
         } finally {

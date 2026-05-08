@@ -19,6 +19,11 @@ type MatchInfo struct {
 	Processed  bool   `json:"processed"` // Harder to check without DB, but let's leave it for API to fill
 }
 
+type DemoFile struct {
+	Path       string
+	Downloaded bool
+}
+
 // GetMatchHistory just returns the links found on the page
 func GetMatchHistory(steamID, cookie string, outputDir string) ([]MatchInfo, error) {
 	urlType := "id"
@@ -84,8 +89,16 @@ func GetMatchHistory(steamID, cookie string, outputDir string) ([]MatchInfo, err
 }
 
 func DownloadAndDecompress(link string, outputDir string) (string, error) {
+	demo, err := DownloadAndDecompressWithStatus(link, outputDir)
+	if err != nil {
+		return "", err
+	}
+	return demo.Path, nil
+}
+
+func DownloadAndDecompressWithStatus(link string, outputDir string) (DemoFile, error) {
 	if err := os.MkdirAll(outputDir, os.ModePerm); err != nil {
-		return "", fmt.Errorf("failed to create output directory: %v", err)
+		return DemoFile{}, fmt.Errorf("failed to create output directory: %v", err)
 	}
 
 	fileName := filepath.Base(link)
@@ -93,22 +106,22 @@ func DownloadAndDecompress(link string, outputDir string) (string, error) {
 	demPath := strings.TrimSuffix(bz2Path, ".bz2")
 
 	if _, err := os.Stat(demPath); err == nil {
-		return demPath, nil // Already exists
+		return DemoFile{Path: demPath, Downloaded: false}, nil // Already exists, do not re-download.
 	}
 
 	err := downloadFile(link, bz2Path)
 	if err != nil {
-		return "", fmt.Errorf("download failed: %v", err)
+		return DemoFile{}, fmt.Errorf("download failed: %v", err)
 	}
 
 	err = decompressBz2(bz2Path, demPath)
 	if err != nil {
 		os.Remove(bz2Path)
-		return "", fmt.Errorf("decompression failed: %v", err)
+		return DemoFile{}, fmt.Errorf("decompression failed: %v", err)
 	}
 
 	os.Remove(bz2Path)
-	return demPath, nil
+	return DemoFile{Path: demPath, Downloaded: true}, nil
 }
 
 // FetchRecentMatches keeps the original CLI behavior
