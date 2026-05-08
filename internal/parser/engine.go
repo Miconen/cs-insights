@@ -61,6 +61,7 @@ func (e *Engine) Parse() ([]InsightData, error) {
 	cfg.IgnoreErrBombsiteIndexNotFound = true
 	cfg.IgnorePacketEntitiesPanic = true
 	
+	// We must recover gracefully or the parser will OOM leak if it loops errors
 	p := demoinfocs.NewParserWithConfig(f, cfg)
 	defer p.Close()
 
@@ -94,12 +95,18 @@ func (e *Engine) Parse() ([]InsightData, error) {
 		// We can add a generic event router if we need to.
 	})
 
+	// Optional: we can silence the parser's internal logger to prevent spam
+	p.RegisterEventHandler(func(event events.ParserWarn) {
+		// Do nothing to suppress the spam
+	})
+
 
 	// Tick processing
 	for {
 		more, err := p.ParseNextFrame()
 		if err != nil {
-			log.Printf("Error parsing frame: %v", err)
+			// Instead of a fatal log, just warn and break. This prevents OOM loops on highly corrupted demos.
+			log.Printf("Warning: stopped parsing due to frame error (demo might be corrupted/unsupported): %v", err)
 			break
 		}
 		if !more {
