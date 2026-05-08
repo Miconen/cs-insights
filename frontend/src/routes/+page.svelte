@@ -104,22 +104,33 @@
         return data.insights.filter((insight: any) => insight.MatchName === selectedMatch);
     }
 
-    // Group consecutive insights within the same round and ≤100 ticks apart.
-    type Cluster = { lead: any; rest: any[] };
+    // Group insights by Game -> Round
+    type RoundGroup = { matchName: string; matchDisplay: string; mapName: string; round: number; events: any[] };
 
-    function clusterInsights(insights: any[]): Cluster[] {
+    function groupInsights(insights: any[]): RoundGroup[] {
         if (!insights.length) return [];
-        const result: Cluster[] = [];
-        let current: Cluster = { lead: insights[0], rest: [] };
+        const result: RoundGroup[] = [];
+        let current: RoundGroup = { 
+            matchName: insights[0].MatchName, 
+            matchDisplay: insights[0].match_display,
+            mapName: insights[0].map_name,
+            round: insights[0].Round, 
+            events: [] 
+        };
 
-        for (let i = 1; i < insights.length; i++) {
-            const prev = insights[i - 1];
+        for (let i = 0; i < insights.length; i++) {
             const curr = insights[i];
-            if (curr.Round === prev.Round && Math.abs(curr.Tick - prev.Tick) <= 100) {
-                current.rest.push(curr);
+            if (curr.MatchName === current.matchName && curr.Round === current.round) {
+                current.events.push(curr);
             } else {
                 result.push(current);
-                current = { lead: curr, rest: [] };
+                current = { 
+                    matchName: curr.MatchName, 
+                    matchDisplay: curr.match_display,
+                    mapName: curr.map_name,
+                    round: curr.Round, 
+                    events: [curr] 
+                };
             }
         }
         result.push(current);
@@ -129,14 +140,9 @@
     // Track which clusters are expanded. Use a plain Record for Svelte 5 reactivity.
     let openKeys: Record<string, boolean> = {};
 
-    function clusterKey(c: Cluster) { return `${c.lead.Round}-${c.lead.Tick}`; }
-
-    function toggleCluster(c: Cluster) {
-        const key = clusterKey(c);
-        openKeys = { ...openKeys, [key]: !openKeys[key] };
+    function toggleDuel(gfKey: string) {
+        openKeys = { ...openKeys, [gfKey]: !openKeys[gfKey] };
     }
-
-    function isOpen(c: Cluster) { return !!openKeys[clusterKey(c)]; }
 
     function copytick(tick: number, btn: HTMLElement) {
         navigator.clipboard.writeText(`demo_gototick ${tick}`);
@@ -247,23 +253,22 @@
                 </label>
             {/if}
         </div>
-        {#each clusterInsights(visibleInsights()) as cluster}
-            {@const allEvents = [cluster.lead, ...cluster.rest]}
+        {#each groupInsights(visibleInsights()) as group}
             <div class="event-group card">
                 <!-- Context header -->
                 <div class="event-group-header row-between">
-                    <span class="small muted">{cluster.lead.map_name || 'Unknown map'} · {cluster.lead.match_display || ''}</span>
-                    <span class="mono small muted">Round {cluster.lead.Round}</span>
+                    <span class="small muted">{group.mapName || 'Unknown map'} · {group.matchDisplay || ''}</span>
+                    <strong class="mono">Round {group.round}</strong>
                 </div>
 
                 <!-- Vertical event list -->
                 <div class="event-list">
-                    {#each allEvents as ev, i}
+                    {#each group.events as ev, i}
                         <div class="event-row">
                             <!-- Gutter: dot + connecting line -->
                             <div class="event-gutter">
                                 <div class="event-dot" style="background: {severityColor[ev.Severity] ?? 'var(--color-accent)'}"></div>
-                                {#if i < allEvents.length - 1}
+                                {#if i < group.events.length - 1}
                                     <div class="event-connector"></div>
                                 {/if}
                             </div>
@@ -279,7 +284,7 @@
 
                                 {#if ev.Type === "Gunfight" && ev.meta}
                                     {@const gfKey = `gf-${ev.Round}-${ev.Tick}`}
-                                    <button class="chip cluster-toggle" onclick={() => { openKeys = { ...openKeys, [gfKey]: !openKeys[gfKey] } }}>
+                                    <button class="chip cluster-toggle" onclick={() => toggleDuel(gfKey)}>
                                         {openKeys[gfKey] ? '▲ Hide' : '▼ Duel details'}
                                     </button>
                                     {#if openKeys[gfKey]}

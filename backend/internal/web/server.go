@@ -266,12 +266,15 @@ func (s *Server) handleInsightsAPI(w http.ResponseWriter, r *http.Request) {
 
 	richInsights = collapsedInsights
 
-	// Sort insights by Tick/Round descending
+	// Sort insights by MatchName descending, then Round ascending, then Tick ascending
 	sort.Slice(richInsights, func(i, j int) bool {
-		if richInsights[i].Round == richInsights[j].Round {
-			return richInsights[i].Tick > richInsights[j].Tick
+		if richInsights[i].MatchName == richInsights[j].MatchName {
+			if richInsights[i].Round == richInsights[j].Round {
+				return richInsights[i].Tick < richInsights[j].Tick
+			}
+			return richInsights[i].Round < richInsights[j].Round
 		}
-		return richInsights[i].Round > richInsights[j].Round
+		return richInsights[i].MatchName > richInsights[j].MatchName
 	})
 
 	avgTTD := 0
