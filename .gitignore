@@ -22,7 +22,7 @@ go.work.sum
 .env
 
 # Custom project binaries and databases
-cs-insights
+/cs-insights
 *.db
 *.sqlite
 *.sqlite3

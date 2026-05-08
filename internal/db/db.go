@@ -55,6 +55,11 @@ func createTables(db *sql.DB) error {
 	return err
 }
 
+func (d *Database) ClearInsights() error {
+	_, err := d.db.Exec("DELETE FROM insights")
+	return err
+}
+
 func (d *Database) SaveInsight(i Insight) error {
 	query := `
 	INSERT INTO insights (player_name, match_name, round, tick, type, severity, description)

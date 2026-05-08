@@ -18,12 +18,25 @@ func main() {
 	playerName := flag.String("player", "", "Exact in-game name of the player to analyze")
 	serve := flag.Bool("serve", false, "Start the web dashboard")
 	dbPath := flag.String("db", "insights.db", "Path to SQLite database")
+	clearDb := flag.Bool("clear", false, "Clear all previous insights from the database before running")
 
 	flag.Parse()
 
 	database, err := db.InitDB(*dbPath)
 	if err != nil {
 		log.Fatalf("Failed to initialize database: %v", err)
+	}
+
+	if *clearDb {
+		err := database.ClearInsights()
+		if err != nil {
+			log.Fatalf("Failed to clear database: %v", err)
+		}
+		log.Println("Successfully cleared previous insights from the database.")
+		// If they only wanted to clear, they might not have provided a demo.
+		if *demoPath == "" && !*serve {
+			return
+		}
 	}
 
 	if *serve {
