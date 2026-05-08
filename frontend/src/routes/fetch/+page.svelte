@@ -118,27 +118,23 @@
 
             <form class="stack" onsubmit={fetchShareCodes}>
                 <label class="field stack-sm" for="steamApiKey">
-                    <span>Steam Web API key</span>
+                    <span class="field-label">Steam Web API key <a class="field-help" href="https://steamcommunity.com/dev/apikey" target="_blank" rel="noreferrer">Get key</a></span>
                     <input type="password" id="steamApiKey" bind:value={apiKey} placeholder="Steam Web API key">
-                    <span class="small muted"><a href="https://steamcommunity.com/dev/apikey" target="_blank" rel="noreferrer">Get a Steam Web API key</a></span>
                 </label>
 
                 <label class="field stack-sm" for="steamIdToken">
-                    <span>SteamID64</span>
+                    <span class="field-label">SteamID64 <a class="field-help" href="https://steamid.io/" target="_blank" rel="noreferrer">Find ID</a></span>
                     <input type="text" id="steamIdToken" bind:value={steamId} placeholder="7656119...">
-                    <span class="small muted"><a href="https://steamid.io/" target="_blank" rel="noreferrer">Find your SteamID64</a></span>
                 </label>
 
                 <label class="field stack-sm" for="authCode">
-                    <span>Match history auth code</span>
+                    <span class="field-label">Match history auth code <a class="field-help" href="https://help.steampowered.com/en/wizard/HelpWithGameIssue/?appid=730&issueid=128" target="_blank" rel="noreferrer">Find code</a></span>
                     <input type="password" id="authCode" bind:value={authCode} placeholder="steamidkey / auth code">
-                    <span class="small muted"><a href="https://help.steampowered.com/en/wizard/HelpWithGameIssue/?appid=730&issueid=128" target="_blank" rel="noreferrer">Find your authentication code</a></span>
                 </label>
 
                 <label class="field stack-sm" for="knownCode">
-                    <span>Known share code</span>
+                    <span class="field-label">Known share code <a class="field-help" href="https://help.steampowered.com/en/wizard/HelpWithGameIssue/?appid=730&issueid=128" target="_blank" rel="noreferrer">Find share code</a></span>
                     <input type="text" id="knownCode" bind:value={knownCode} placeholder="CSGO-xxxxx-xxxxx-xxxxx-xxxxx-xxxxx">
-                    <span class="small muted"><a href="https://help.steampowered.com/en/wizard/HelpWithGameIssue/?appid=730&issueid=128" target="_blank" rel="noreferrer">Find a match-history share code</a></span>
                 </label>
 
                 <div class="token-actions">
@@ -184,7 +180,7 @@
                 </label>
 
                 <label class="field stack-sm" for="cookie">
-                    <span>steamLoginSecure cookie</span>
+                    <span class="field-label">steamLoginSecure cookie</span>
                     <input type="password" id="cookie" bind:value={cookie} placeholder="Paste cookie value here" required>
                     <span class="small muted">Required to access your private match history.</span>
                 </label>
@@ -303,16 +299,28 @@
         margin-bottom: 0;
     }
 
-    .field .small {
-        line-height: 1.35;
-    }
-
     .field input {
         width: 100%;
     }
 
-    .field > span:first-child {
+    .field-label {
+        align-items: baseline;
+        display: flex;
+        flex-wrap: wrap;
+        gap: var(--space-2);
         font-weight: 600;
+    }
+
+    .field-help {
+        color: var(--color-text-muted);
+        font-size: 0.75rem;
+        font-weight: 500;
+        text-decoration: none;
+    }
+
+    .field-help:hover {
+        color: var(--color-accent);
+        text-decoration: underline;
     }
 
     .compact-field {
