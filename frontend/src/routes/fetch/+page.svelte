@@ -132,13 +132,13 @@
                 <label class="field stack-sm" for="authCode">
                     <span>Match history auth code</span>
                     <input type="password" id="authCode" bind:value={authCode} placeholder="steamidkey / auth code">
-                    <span class="small muted"><a href="https://steamcommunity.com/my/gcpd/730?tab=matchhistory" target="_blank" rel="noreferrer">Find your CS match-history auth code</a></span>
+                    <span class="small muted"><a href="https://help.steampowered.com/en/wizard/HelpWithGameIssue/?appid=730&issueid=128" target="_blank" rel="noreferrer">Find your authentication code</a></span>
                 </label>
 
                 <label class="field stack-sm" for="knownCode">
                     <span>Known share code</span>
                     <input type="text" id="knownCode" bind:value={knownCode} placeholder="CSGO-xxxxx-xxxxx-xxxxx-xxxxx-xxxxx">
-                    <span class="small muted"><a href="https://steamcommunity.com/my/gcpd/730?tab=matchhistorypremier" target="_blank" rel="noreferrer">Open Premier match history to copy a share code</a></span>
+                    <span class="small muted"><a href="https://help.steampowered.com/en/wizard/HelpWithGameIssue/?appid=730&issueid=128" target="_blank" rel="noreferrer">Find a match-history share code</a></span>
                 </label>
 
                 <div class="action-row">
