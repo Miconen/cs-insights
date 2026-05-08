@@ -14,6 +14,7 @@ type AnalyzerConfig struct {
 	Spasm           SpasmConfig           `json:"spasm"`
 	CounterStrafe   CounterStrafeConfig   `json:"counter_strafe"`
 	CrosshairHeight CrosshairHeightConfig `json:"crosshair_height"`
+	Spray           SprayConfig           `json:"spray"`
 }
 
 type PrematureFireConfig struct {
@@ -32,6 +33,10 @@ type CounterStrafeConfig struct {
 
 type CrosshairHeightConfig struct {
 	MaxVerticalDistance float64 `json:"max_vertical_distance"`
+}
+
+type SprayConfig struct {
+	LongRangeThreshold float64 `json:"long_range_threshold"` // 1200 hammer units is typical "long range"
 }
 
 func LoadConfig(path string) (*Config, error) {
@@ -70,6 +75,9 @@ func DefaultConfig() *Config {
 			},
 			CrosshairHeight: CrosshairHeightConfig{
 				MaxVerticalDistance: 10.0,
+			},
+			Spray: SprayConfig{
+				LongRangeThreshold: 1200.0,
 			},
 		},
 	}

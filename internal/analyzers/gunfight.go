@@ -21,6 +21,10 @@ type Gunfight struct {
 	IsActive             bool
 	CrosshairPitchDiff   float64
 	CrosshairDirection   string
+
+	// First Bullet Accuracy
+	TargetFirstBulletAccuracy float64
+	TargetWasPeeking          bool
 }
 
 type GunfightMetadata struct {
@@ -31,6 +35,8 @@ type GunfightMetadata struct {
 	CrosshairPitch float64 `json:"crosshair_pitch"`
 	CrosshairDir   string  `json:"crosshair_dir"`
 	Winner         string  `json:"winner"`
+	FirstBulletAcc float64 `json:"first_bullet_acc"`
+	WasPeeking     bool    `json:"was_peeking"`
 }
 
 type GunfightAnalyzer struct {
@@ -71,6 +77,26 @@ func (a *GunfightAnalyzer) OnEvent(event interface{}, state *parser.GameState) {
 			duel := a.getOrCreateDuel(state, closestEnemy)
 			if duel.TargetFirstShotTick == 0 {
 				duel.TargetFirstShotTick = state.CurrentTick
+
+				// Calculate First Bullet Accuracy
+				targetEyes, ok1 := e.Shooter.PositionEyes()
+				enemyEyes, ok2 := closestEnemy.PositionEyes()
+				if ok1 && ok2 {
+					pitchToHead, yawToHead := calculateAngles(targetEyes, enemyEyes)
+					pDiff := math.Abs(float64(e.Shooter.ViewDirectionX() - pitchToHead))
+					yDiff := math.Abs(float64(e.Shooter.ViewDirectionY() - yawToHead))
+					if yDiff > 180 {
+						yDiff = 360 - yDiff
+					}
+					duel.TargetFirstBulletAccuracy = pDiff + yDiff
+				}
+
+				// Check if holding or peeking (based on 2D velocity at shot time)
+				// We don't have historical positions easily accessible here without state tracking,
+				// so for simplicity in V1 of this feature, we will estimate based on view movement
+				// or just tag it based on general movement.
+				// For now, let's just log the accuracy without the stance since Velocity() is not available in v5.
+				duel.TargetWasPeeking = false 
 			}
 		} else if closestEnemy.Name == a.targetPlayer {
 			duel := a.getOrCreateDuel(state, e.Shooter)
@@ -243,6 +269,8 @@ func (a *GunfightAnalyzer) resolveDuel(state *parser.GameState, duel *Gunfight, 
 		CrosshairPitch: duel.CrosshairPitchDiff,
 		CrosshairDir:   duel.CrosshairDirection,
 		Winner:         winner,
+		FirstBulletAcc: duel.TargetFirstBulletAccuracy,
+		WasPeeking:     duel.TargetWasPeeking,
 	}
 
 	// Only record if it was an actual duel (shots fired or damage dealt)

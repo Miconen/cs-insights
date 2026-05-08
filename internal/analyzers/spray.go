@@ -2,13 +2,16 @@ package analyzers
 
 import (
 	"fmt"
+	"math"
 
+	"cs-insights/internal/config"
 	"cs-insights/internal/parser"
 	"github.com/markus-wa/demoinfocs-golang/v5/pkg/demoinfocs/events"
 )
 
 type SprayAnalyzer struct {
 	targetPlayer string
+	cfg          config.SprayConfig
 	insights     []parser.InsightData
 
 	// State for tracking an active spray
@@ -17,11 +20,13 @@ type SprayAnalyzer struct {
 	shotsFired      int
 	shotsHit        int
 	lastShotTick    int
+	lastEnemyHitID  int
 }
 
-func NewSprayAnalyzer(targetPlayer string) *SprayAnalyzer {
+func NewSprayAnalyzer(targetPlayer string, cfg config.SprayConfig) *SprayAnalyzer {
 	return &SprayAnalyzer{
 		targetPlayer: targetPlayer,
+		cfg:          cfg,
 	}
 }
 
@@ -57,13 +62,14 @@ func (a *SprayAnalyzer) OnEvent(event interface{}, state *parser.GameState) {
 		a.lastShotTick = state.CurrentTick
 
 	case events.PlayerHurt:
-		if e.Attacker == nil || e.Attacker.Name != a.targetPlayer {
+		if e.Attacker == nil || e.Attacker.Name != a.targetPlayer || e.Player == nil {
 			return
 		}
 		
 		// If we are currently spraying and hit someone, increment hits
 		if a.isSpraying {
 			a.shotsHit++
+			a.lastEnemyHitID = e.Player.UserID
 		}
 	}
 }
@@ -85,13 +91,48 @@ func (a *SprayAnalyzer) evaluateSpray(state *parser.GameState) {
 	if a.shotsFired >= 7 { // Only care if they sprayed 7 or more bullets (definitely a spray, not a 3-4 bullet burst)
 		efficiency := float64(a.shotsHit) / float64(a.shotsFired)
 		
+		// Calculate distance if we hit someone
+		distance := 0.0
+		if a.lastEnemyHitID > 0 {
+			targetPlayer := getPlayerByName(state, a.targetPlayer)
+			if targetPlayer != nil {
+				for _, p := range state.Parser.GameState().Participants().Playing() {
+					if p.UserID == a.lastEnemyHitID {
+						pos1 := targetPlayer.Position()
+						pos2 := p.Position()
+						distX := pos2.X - pos1.X
+						distY := pos2.Y - pos1.Y
+						distZ := pos2.Z - pos1.Z
+						distance = math.Sqrt(float64(distX*distX + distY*distY + distZ*distZ))
+						break
+					}
+				}
+			}
+		}
+
 		if efficiency < 0.2 { // If less than 20% hit rate
+			desc := fmt.Sprintf("Inefficient spray: Fired %d bullets, hit %d (%.0f%%)", a.shotsFired, a.shotsHit, efficiency*100)
+			severity := "Medium"
+			if distance > a.cfg.LongRangeThreshold {
+				desc += fmt.Sprintf(" - Distance was %.0f units (Low percentage long-range spray)", distance)
+				severity = "High"
+			}
+
 			a.insights = append(a.insights, parser.InsightData{
 				Round:       state.CurrentRound,
 				Tick:        a.sprayStartTick,
 				Type:        "PoorSpray",
+				Severity:    severity,
+				Description: desc,
+			})
+		} else if distance > a.cfg.LongRangeThreshold && a.shotsFired > 10 {
+			// Even if they hit, spraying 10+ bullets at long range is a bad habit
+			a.insights = append(a.insights, parser.InsightData{
+				Round:       state.CurrentRound,
+				Tick:        a.sprayStartTick,
+				Type:        "SprayConfidence",
 				Severity:    "Medium",
-				Description: fmt.Sprintf("Inefficient spray: Fired %d bullets, hit %d (%.0f%%)", a.shotsFired, a.shotsHit, efficiency*100),
+				Description: fmt.Sprintf("Overconfident long-range spray: Fired %d bullets at a target %.0f units away.", a.shotsFired, distance),
 			})
 		}
 	}

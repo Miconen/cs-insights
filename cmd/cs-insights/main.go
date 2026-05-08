@@ -67,7 +67,7 @@ func main() {
 	// Register V1 & V2 Analyzers
 	engine.AddAnalyzer(analyzers.NewPrematureFireAnalyzer(*playerName, cfg.Analyzers.PrematureFire))
 	engine.AddAnalyzer(analyzers.NewSpasmAnalyzer(*playerName, cfg.Analyzers.Spasm))
-	engine.AddAnalyzer(analyzers.NewSprayAnalyzer(*playerName))
+	engine.AddAnalyzer(analyzers.NewSprayAnalyzer(*playerName, cfg.Analyzers.Spray))
 	engine.AddAnalyzer(analyzers.NewCounterStrafeAnalyzer(*playerName, cfg.Analyzers.CounterStrafe))
 	engine.AddAnalyzer(analyzers.NewGunfightAnalyzer(*playerName))
 
