@@ -116,6 +116,27 @@ func (s *Server) handleDashboard(w http.ResponseWriter, r *http.Request) {
 		advice = append(advice, template.HTML("🔫 <b>Spray Control:</b> Your spray efficiency is dropping below 20%. Spend some time in a recoil control map or switch to bursting/tapping at medium to long ranges."))
 	}
 
+	// Collapse duplicate PrematureFire events in the same round (e.g. spamming shots while aiming away)
+	var collapsedInsights []RichInsight
+	var lastPrematureTick int
+	var lastPrematureRound int
+
+	for i := len(richInsights) - 1; i >= 0; i-- { // Process oldest to newest to keep the first instance
+		ri := richInsights[i]
+		if ri.Type == "PrematureFire" {
+			if ri.Round == lastPrematureRound && (ri.Tick - lastPrematureTick) > 0 && (ri.Tick - lastPrematureTick) < 128 {
+				// Skip this one since it's within 2 seconds of the last one in the same round
+				lastPrematureTick = ri.Tick
+				continue
+			}
+			lastPrematureRound = ri.Round
+			lastPrematureTick = ri.Tick
+		}
+		collapsedInsights = append(collapsedInsights, ri)
+	}
+	
+	richInsights = collapsedInsights
+
 	// Sort insights by Tick/Round descending
 	sort.Slice(richInsights, func(i, j int) bool {
 		if richInsights[i].Round == richInsights[j].Round {

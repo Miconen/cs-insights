@@ -6,34 +6,26 @@ import (
 
 	"cs-insights/internal/config"
 	"cs-insights/internal/parser"
+	"github.com/golang/geo/r3"
 	"github.com/markus-wa/demoinfocs-golang/v5/pkg/demoinfocs/common"
 	events "github.com/markus-wa/demoinfocs-golang/v5/pkg/demoinfocs/events"
-	"github.com/golang/geo/r3"
 )
 
 type PrematureFireAnalyzer struct {
 	targetPlayer string
 	cfg          config.PrematureFireConfig
 	insights     []parser.InsightData
-	
-	// Key: Enemy UserID, Value: Tick when spotted
-	spottedEnemies map[int]int
-
-	// Track last tick angles to calculate velocity for reaction time
-	lastPitch float32
-	lastYaw   float32
 }
 
 func NewPrematureFireAnalyzer(targetPlayer string, cfg config.PrematureFireConfig) *PrematureFireAnalyzer {
 	return &PrematureFireAnalyzer{
-		targetPlayer:   targetPlayer,
-		cfg:            cfg,
-		spottedEnemies: make(map[int]int),
+		targetPlayer: targetPlayer,
+		cfg:          cfg,
 	}
 }
 
 func (a *PrematureFireAnalyzer) Name() string {
-	return "Premature Firing & Reaction"
+	return "Premature Firing"
 }
 
 func (a *PrematureFireAnalyzer) OnEvent(event interface{}, state *parser.GameState) {
@@ -97,75 +89,6 @@ func (a *PrematureFireAnalyzer) OnEvent(event interface{}, state *parser.GameSta
 }
 
 func (a *PrematureFireAnalyzer) OnTickDone(state *parser.GameState) {
-	targetPlayer := getPlayerByName(state, a.targetPlayer)
-	if targetPlayer == nil || !targetPlayer.IsAlive() {
-		return
-	}
-
-	currPitch := targetPlayer.ViewDirectionX()
-	currYaw := targetPlayer.ViewDirectionY()
-
-	pitchDiff := math.Abs(float64(currPitch - a.lastPitch))
-	yawDiff := math.Abs(float64(currYaw - a.lastYaw))
-	if yawDiff > 180 {
-		yawDiff = 360 - yawDiff
-	}
-	velocity := pitchDiff + yawDiff
-
-	// If there's a significant mouse movement, check if it's a reaction to any spotted enemy
-	if velocity > 1.0 { // 1.0 degree per tick is a solid flick start
-		for enemyID, spottedTick := range a.spottedEnemies {
-			tickDiff := state.CurrentTick - spottedTick
-			if tickDiff > 0 {
-				timeDiffMs := float64(tickDiff) * (1000.0 / state.Parser.TickRate())
-				
-				if timeDiffMs > a.cfg.ReactionTimeMaxMs {
-					a.insights = append(a.insights, parser.InsightData{
-						Round:       state.CurrentRound,
-						Tick:        state.CurrentTick,
-						Type:        "SlowReaction",
-						Severity:    "Low",
-						Description: fmt.Sprintf("Slow reaction time: %.0fms before initiating aim movement", timeDiffMs),
-					})
-				}
-				// We handled the reaction for this enemy, remove from map
-				delete(a.spottedEnemies, enemyID)
-			}
-		}
-	}
-
-	a.lastPitch = currPitch
-	a.lastYaw = currYaw
-
-	for _, p := range state.Parser.GameState().Participants().Playing() {
-		if p.Team == targetPlayer.Team || !p.IsAlive() {
-			continue
-		}
-
-		targetEyes, ok := targetPlayer.PositionEyes()
-		if !ok {
-			continue
-		}
-
-		pitch, yaw := calculateAngles(targetEyes, p.Position())
-		
-		pDiff := math.Abs(float64(targetPlayer.ViewDirectionX() - pitch))
-		yDiff := math.Abs(float64(targetPlayer.ViewDirectionY() - yaw))
-		
-		if yDiff > 180 {
-			yDiff = 360 - yDiff
-		}
-
-		// Simple FOV check: if enemy is within 45 degrees of center view
-		if pDiff < 45 && yDiff < 45 {
-			if _, exists := a.spottedEnemies[p.UserID]; !exists {
-				a.spottedEnemies[p.UserID] = state.CurrentTick
-			}
-		} else {
-			// If they leave FOV, reset
-			delete(a.spottedEnemies, p.UserID)
-		}
-	}
 }
 
 func (a *PrematureFireAnalyzer) GetInsights() []parser.InsightData {
