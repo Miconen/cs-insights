@@ -106,92 +106,95 @@
         </div>
     </div>
 
-    <div class="card stack">
-        <div class="stack-sm">
-            <h2>Recommended: Steam Match History Token</h2>
-            <p class="muted small">
-                This uses Valve's official match-history API with your Steam Web API key and CS match-history auth code.
-                It is safer than pasting <code>steamLoginSecure</code>, because it does not grant browser-session access.
-                For now this lists share codes only; direct demo download from share codes is the next step.
-            </p>
-        </div>
+    <div class="fetch-layout">
+        <article class="card stack form-panel recommended-panel">
+            <div class="form-header">
+                <span class="eyebrow">Recommended</span>
+                <h2>Steam Match History Token</h2>
+                <p class="muted small">
+                    Uses Valve's official match-history API. Safer than using a browser-session cookie. Direct demo download from share codes is still pending.
+                </p>
+            </div>
 
-        <form class="stack" onsubmit={fetchShareCodes}>
-            <div class="grid-2">
-                <label class="stack-sm" for="steamApiKey">
-                    Steam Web API key
+            <form class="stack" onsubmit={fetchShareCodes}>
+                <label class="field stack-sm" for="steamApiKey">
+                    <span>Steam Web API key</span>
                     <input type="password" id="steamApiKey" bind:value={apiKey} placeholder="Steam Web API key">
                     <span class="small muted"><a href="https://steamcommunity.com/dev/apikey" target="_blank" rel="noreferrer">Get a Steam Web API key</a></span>
                 </label>
-                <label class="stack-sm" for="steamIdToken">
-                    SteamID64
+
+                <label class="field stack-sm" for="steamIdToken">
+                    <span>SteamID64</span>
                     <input type="text" id="steamIdToken" bind:value={steamId} placeholder="7656119...">
                     <span class="small muted"><a href="https://steamid.io/" target="_blank" rel="noreferrer">Find your SteamID64</a></span>
                 </label>
-            </div>
-            <div class="grid-2">
-                <label class="stack-sm" for="authCode">
-                    Match history auth code
+
+                <label class="field stack-sm" for="authCode">
+                    <span>Match history auth code</span>
                     <input type="password" id="authCode" bind:value={authCode} placeholder="steamidkey / auth code">
                     <span class="small muted"><a href="https://steamcommunity.com/my/gcpd/730?tab=matchhistory" target="_blank" rel="noreferrer">Find your CS match-history auth code</a></span>
                 </label>
-                <label class="stack-sm" for="knownCode">
-                    Known share code
+
+                <label class="field stack-sm" for="knownCode">
+                    <span>Known share code</span>
                     <input type="text" id="knownCode" bind:value={knownCode} placeholder="CSGO-xxxxx-xxxxx-xxxxx-xxxxx-xxxxx">
                     <span class="small muted"><a href="https://steamcommunity.com/my/gcpd/730?tab=matchhistorypremier" target="_blank" rel="noreferrer">Open Premier match history to copy a share code</a></span>
                 </label>
+
+                <div class="action-row">
+                    <label class="field compact-field stack-sm" for="limit">
+                        <span>Games</span>
+                        <input type="number" id="limit" bind:value={limit} min="1" max="100">
+                    </label>
+                    <button class="chip primary-chip" type="submit" aria-busy={loadingShareCodes}>Fetch Share Codes</button>
+                </div>
+            </form>
+
+            {#if shareCodes.length > 0}
+                <div class="stack-sm result-panel">
+                    <div class="section-heading">Share Codes ({shareCodes.length})</div>
+                    <ul>
+                        {#each shareCodes as item}
+                            <li><code>{item.share_code}</code></li>
+                        {/each}
+                    </ul>
+                    <p class="muted small">These are fetched without using your Steam session cookie. Download/analyze support from share codes still needs to be implemented.</p>
+                </div>
+            {/if}
+        </article>
+
+        <article class="card stack form-panel legacy-panel">
+            <div class="form-header">
+                <span class="eyebrow warning">Legacy</span>
+                <h2>GCPD Cookie Scrape</h2>
+                <p class="muted small">
+                    Works for direct replay downloads, but requires your <code>steamLoginSecure</code> browser cookie. Treat that cookie like a password.
+                </p>
             </div>
-            <label class="stack-sm" for="limit">
-                Number of games
-                <input type="number" id="limit" bind:value={limit} min="1" max="100">
-            </label>
-            <div>
-                <button class="chip primary-chip" type="submit" aria-busy={loadingShareCodes}>Fetch Share Codes</button>
-            </div>
-        </form>
 
-        {#if shareCodes.length > 0}
-            <div class="stack-sm">
-                <div class="section-heading">Share Codes ({shareCodes.length})</div>
-                <ul>
-                    {#each shareCodes as item}
-                        <li><code>{item.share_code}</code></li>
-                    {/each}
-                </ul>
-                <p class="muted small">These are fetched without using your Steam session cookie. Download/analyze support from share codes still needs to be implemented.</p>
-            </div>
-        {/if}
-
-        <hr>
-
-        <div class="stack-sm">
-            <h2>Legacy: GCPD Cookie Scrape</h2>
-            <p class="muted small">
-                This still works for direct replay downloads, but it requires your <code>steamLoginSecure</code> browser cookie.
-                Treat that cookie like a password and avoid sharing or storing it.
-            </p>
-        </div>
-
-        <form class="stack" onsubmit={fetchMatches}>
-            <div class="grid-2">
-                <label class="stack-sm" for="steamId">
-                    Steam ID or Custom URL
+            <form class="stack" onsubmit={fetchMatches}>
+                <label class="field stack-sm" for="steamId">
+                    <span>Steam ID or Custom URL</span>
                     <input type="text" id="steamId" bind:value={steamId} placeholder="e.g. Miconen" required>
                 </label>
-                <label class="stack-sm" for="playerName">
-                    Exact In-Game Name
+
+                <label class="field stack-sm" for="playerName">
+                    <span>Exact in-game name</span>
                     <input type="text" id="playerName" bind:value={playerName} placeholder="e.g. s1mple" required>
                 </label>
-            </div>
-            <label class="stack-sm" for="cookie">
-                steamLoginSecure Cookie
-                <input type="password" id="cookie" bind:value={cookie} placeholder="Paste cookie value here" required>
-                <span class="small muted">Required to access your private match history.</span>
-            </label>
-            <div>
-                <button class="chip primary-chip" type="submit" aria-busy={loadingMatches}>Load Match History</button>
-            </div>
-        </form>
+
+                <label class="field stack-sm" for="cookie">
+                    <span>steamLoginSecure cookie</span>
+                    <input type="password" id="cookie" bind:value={cookie} placeholder="Paste cookie value here" required>
+                    <span class="small muted">Required to access your private match history.</span>
+                </label>
+
+                <div class="action-row">
+                    <button class="chip primary-chip" type="submit" aria-busy={loadingMatches}>Load Match History</button>
+                </div>
+            </form>
+        </article>
+    </div>
 
         {#if error}
             <div class="card error-card">
@@ -244,7 +247,6 @@
                 </div>
             </div>
         {/if}
-    </div>
 </section>
 
 <style>
@@ -252,11 +254,80 @@
         max-width: none;
     }
 
+    .fetch-layout {
+        display: grid;
+        grid-template-columns: minmax(0, 1.15fr) minmax(20rem, 0.85fr);
+        gap: var(--space-4);
+        align-items: start;
+    }
+
+    .form-panel {
+        padding: var(--space-5);
+    }
+
+    .recommended-panel {
+        background: linear-gradient(135deg, var(--color-surface), color-mix(in srgb, var(--color-accent) 7%, var(--color-surface-2)));
+    }
+
+    .legacy-panel {
+        background: color-mix(in srgb, var(--color-warning) 5%, var(--color-surface));
+    }
+
+    .form-header h2 {
+        margin-bottom: var(--space-1);
+    }
+
+    .eyebrow {
+        display: inline-flex;
+        align-items: center;
+        width: fit-content;
+        border: 1px solid color-mix(in srgb, var(--color-accent) 45%, var(--color-border));
+        border-radius: 999px;
+        color: var(--color-accent);
+        font-size: 0.75rem;
+        font-weight: 650;
+        letter-spacing: 0.04em;
+        line-height: 1;
+        padding: 0.25rem 0.5rem;
+        text-transform: uppercase;
+    }
+
+    .eyebrow.warning {
+        border-color: color-mix(in srgb, var(--color-warning) 45%, var(--color-border));
+        color: var(--color-warning);
+    }
+
+    .field {
+        margin-bottom: 0;
+    }
+
+    .field > span:first-child {
+        font-weight: 600;
+    }
+
+    .compact-field {
+        width: 8rem;
+        flex: 0 0 auto;
+    }
+
+    .action-row {
+        display: flex;
+        align-items: end;
+        gap: var(--space-3);
+        flex-wrap: wrap;
+    }
+
     .primary-chip {
         background: var(--color-accent);
         color: var(--color-accent-contrast);
         border-color: var(--color-accent);
         height: 2.25rem;
+        width: fit-content;
+    }
+
+    .result-panel {
+        border-top: 1px solid var(--color-border);
+        padding-top: var(--space-4);
     }
 
     .error-card {
@@ -277,7 +348,20 @@
     }
 
     @media (max-width: 639px) {
+        .fetch-layout {
+            grid-template-columns: 1fr;
+        }
+
         .page-head {
+            align-items: flex-start;
+            flex-direction: column;
+        }
+
+        .form-panel {
+            padding: var(--space-4);
+        }
+
+        .action-row {
             align-items: flex-start;
             flex-direction: column;
         }
