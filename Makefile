@@ -1,6 +1,9 @@
-.PHONY: serve fetch parse
+.DEFAULT_GOAL := serve
+
+.PHONY: serve fetch parse clear
 
 # Start the API server
+# Usage: STEAM_WEB_API_KEY="your_key" make
 serve:
 	cd backend && go run ./cmd/cs-insights/main.go --serve
 

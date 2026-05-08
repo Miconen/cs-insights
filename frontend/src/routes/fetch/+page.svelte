@@ -113,6 +113,10 @@
                 The Steam Web API key is read from the backend <code>STEAM_WEB_API_KEY</code> environment variable, so you do not need to paste it into the browser.
                 For now this lists share codes only; direct demo download from share codes is the next step.
             </p>
+            <p class="muted small">
+                Get a Steam Web API key from <a href="https://steamcommunity.com/dev/apikey" target="_blank" rel="noreferrer">steamcommunity.com/dev/apikey</a>, then start the backend with <code>STEAM_WEB_API_KEY="your_key" make</code> from the repository root.
+                For a hosted multi-user deployment, users should generally provide their own key rather than sharing one server-wide key.
+            </p>
         </div>
 
         <form class="stack" onsubmit={fetchShareCodes}>

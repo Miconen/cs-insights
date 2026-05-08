@@ -15,6 +15,7 @@ You need [Go](https://golang.org/doc/install) installed.
 ```bash
 git clone https://github.com/Miconen/cs-insights.git
 cd cs-insights
+cd backend
 go build -o cs-insights ./cmd/cs-insights
 ```
 
@@ -27,6 +28,7 @@ Using the tool is a two-step process: first, parse a demo file to generate insig
 Run the tool against a CS2 `.dem` file, providing your exact in-game name. This will parse the demo and save the insights to a local SQLite database (`insights.db`).
 
 ```bash
+cd backend
 ./cs-insights --demo=/path/to/your/match.dem --player="YourExactIngameName"
 ```
 
@@ -37,10 +39,32 @@ Run the tool against a CS2 `.dem` file, providing your exact in-game name. This 
 Start the web dashboard to view your generated insights:
 
 ```bash
+cd backend
 ./cs-insights --serve
 ```
 
-Then, open your web browser and navigate to:
-[http://localhost:8080](http://localhost:8080)
+Or from the repository root:
+
+```bash
+make
+```
+
+If you want the Steam match-history token flow, provide a Steam Web API key to the backend:
+
+```bash
+STEAM_WEB_API_KEY="your_key" make
+```
+
+You can create a Steam Web API key at `https://steamcommunity.com/dev/apikey`.
+
+Then start the Svelte frontend:
+
+```bash
+cd frontend
+npm install
+npm run dev
+```
+
+Open your browser at [http://localhost:5173](http://localhost:5173).
 
 Enter your player name in the form to see your specific habits and alerts!
