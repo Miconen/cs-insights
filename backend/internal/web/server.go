@@ -43,6 +43,7 @@ func (s *Server) Start(addr string) error {
 
 	http.HandleFunc("/api/insights", corsMiddleware(s.handleInsightsAPI))
 	http.HandleFunc("/api/fetch/list", corsMiddleware(s.handleFetchListAPI))
+	http.HandleFunc("/api/fetch/sharecodes", corsMiddleware(s.handleFetchShareCodesAPI))
 	http.HandleFunc("/api/fetch/process", corsMiddleware(s.handleFetchProcessAPI))
 
 	log.Printf("Starting API server on http://%s", addr)
@@ -66,6 +67,38 @@ func (s *Server) handleFetchListAPI(w http.ResponseWriter, r *http.Request) {
 
 	w.Header().Set("Content-Type", "application/json")
 	json.NewEncoder(w).Encode(matches)
+}
+
+func (s *Server) handleFetchShareCodesAPI(w http.ResponseWriter, r *http.Request) {
+	apiKey := r.URL.Query().Get("api_key")
+	steamID := r.URL.Query().Get("steam_id")
+	authCode := r.URL.Query().Get("auth_code")
+	knownCode := r.URL.Query().Get("known_code")
+	limit := 10
+
+	if rawLimit := r.URL.Query().Get("limit"); rawLimit != "" {
+		if _, err := fmt.Sscanf(rawLimit, "%d", &limit); err != nil || limit < 1 {
+			http.Error(w, "Invalid limit", http.StatusBadRequest)
+			return
+		}
+	}
+
+	if apiKey == "" || steamID == "" || authCode == "" || knownCode == "" {
+		http.Error(w, "Missing api_key, steam_id, auth_code, or known_code", http.StatusBadRequest)
+		return
+	}
+
+	codes, err := fetcher.GetNextMatchShareCodes(apiKey, steamID, authCode, knownCode, limit)
+	if err != nil {
+		http.Error(w, err.Error(), http.StatusInternalServerError)
+		return
+	}
+
+	w.Header().Set("Content-Type", "application/json")
+	json.NewEncoder(w).Encode(map[string]interface{}{
+		"share_codes": codes,
+		"note":        "Share codes are fetched via Valve's official match-history token API. Demo downloading from share codes is not implemented yet; use the legacy GCPD method for direct replay downloads for now.",
+	})
 }
 
 func (s *Server) handleFetchProcessAPI(w http.ResponseWriter, r *http.Request) {

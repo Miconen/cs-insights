@@ -2,9 +2,15 @@
     let steamId = '';
     let cookie = '';
     let playerName = '';
+    let apiKey = '';
+    let authCode = '';
+    let knownCode = '';
+    let limit = 10;
     
     let loadingMatches = false;
+    let loadingShareCodes = false;
     let matches: any[] = [];
+    let shareCodes: any[] = [];
     let error = '';
 
     async function fetchMatches(e: Event) {
@@ -19,6 +25,29 @@
             error = e.message;
         } finally {
             loadingMatches = false;
+        }
+    }
+
+    async function fetchShareCodes(e: Event) {
+        e.preventDefault();
+        loadingShareCodes = true;
+        error = '';
+        try {
+            const params = new URLSearchParams({
+                api_key: apiKey,
+                steam_id: steamId,
+                auth_code: authCode,
+                known_code: knownCode,
+                limit: String(limit)
+            });
+            const res = await fetch(`http://localhost:8080/api/fetch/sharecodes?${params.toString()}`);
+            if (!res.ok) throw new Error(await res.text());
+            const payload = await res.json();
+            shareCodes = payload.share_codes ?? [];
+        } catch (e: any) {
+            error = e.message;
+        } finally {
+            loadingShareCodes = false;
         }
     }
 
@@ -62,6 +91,67 @@
     </div>
 
     <div class="card stack">
+        <div class="stack-sm">
+            <h2>Recommended: Steam Match History Token</h2>
+            <p class="muted small">
+                This uses Valve's official match-history API with your Steam Web API key and CS match-history auth code.
+                It is safer than pasting <code>steamLoginSecure</code>, because it does not grant browser-session access.
+                For now this lists share codes only; direct demo download from share codes is the next step.
+            </p>
+        </div>
+
+        <form class="stack" onsubmit={fetchShareCodes}>
+            <div class="grid-2">
+                <label class="stack-sm" for="steamApiKey">
+                    Steam Web API key
+                    <input type="password" id="steamApiKey" bind:value={apiKey} placeholder="Steam Web API key">
+                </label>
+                <label class="stack-sm" for="steamIdToken">
+                    SteamID64
+                    <input type="text" id="steamIdToken" bind:value={steamId} placeholder="7656119...">
+                </label>
+            </div>
+            <div class="grid-2">
+                <label class="stack-sm" for="authCode">
+                    Match history auth code
+                    <input type="password" id="authCode" bind:value={authCode} placeholder="steamidkey / auth code">
+                </label>
+                <label class="stack-sm" for="knownCode">
+                    Known share code
+                    <input type="text" id="knownCode" bind:value={knownCode} placeholder="CSGO-xxxxx-xxxxx-xxxxx-xxxxx-xxxxx">
+                </label>
+            </div>
+            <label class="stack-sm" for="limit">
+                Number of games
+                <input type="number" id="limit" bind:value={limit} min="1" max="100">
+            </label>
+            <div>
+                <button class="chip primary-chip" type="submit" aria-busy={loadingShareCodes}>Fetch Share Codes</button>
+            </div>
+        </form>
+
+        {#if shareCodes.length > 0}
+            <div class="stack-sm">
+                <div class="section-heading">Share Codes ({shareCodes.length})</div>
+                <ul>
+                    {#each shareCodes as item}
+                        <li><code>{item.share_code}</code></li>
+                    {/each}
+                </ul>
+                <p class="muted small">These are fetched without using your Steam session cookie. Download/analyze support from share codes still needs to be implemented.</p>
+            </div>
+        {/if}
+
+        <hr>
+
+        <div class="stack-sm">
+            <h2>Legacy: GCPD Cookie Scrape</h2>
+            <p class="muted small">
+                This still works for direct replay downloads, but it requires your <code>steamLoginSecure</code> browser cookie.
+                Treat that cookie like a password and avoid sharing or storing it.
+            </p>
+        </div>
+
         <form class="stack" onsubmit={fetchMatches}>
             <div class="grid-2">
                 <label class="stack-sm" for="steamId">

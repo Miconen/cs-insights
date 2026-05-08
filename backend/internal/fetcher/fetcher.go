@@ -2,10 +2,12 @@ package fetcher
 
 import (
 	"compress/bzip2"
+	"encoding/json"
 	"fmt"
 	"io"
 	"log"
 	"net/http"
+	"net/url"
 	"os"
 	"path/filepath"
 	"regexp"
@@ -19,6 +21,73 @@ type MatchInfo struct {
 	Processed  bool   `json:"processed"` // Harder to check without DB, but let's leave it for API to fill
 }
 
+type ShareCodeInfo struct {
+	ShareCode string `json:"share_code"`
+}
+
+type nextMatchSharingCodeResponse struct {
+	Result struct {
+		NextCode string `json:"nextcode"`
+	} `json:"result"`
+}
+
+// GetNextMatchShareCodes uses Valve's official, narrow-scope match-history API.
+// It requires a Steam Web API key, SteamID64, the user's CS match-history auth code
+// (called steamidkey by the endpoint), and a known match share code to page from.
+func GetNextMatchShareCodes(apiKey, steamID64, authCode, knownCode string, limit int) ([]ShareCodeInfo, error) {
+	if limit <= 0 {
+		return nil, fmt.Errorf("limit must be greater than 0")
+	}
+
+	codes := make([]ShareCodeInfo, 0, limit)
+	currentKnownCode := knownCode
+	client := &http.Client{}
+
+	for len(codes) < limit {
+		values := url.Values{}
+		values.Set("key", apiKey)
+		values.Set("steamid", steamID64)
+		values.Set("steamidkey", authCode)
+		values.Set("knowncode", currentKnownCode)
+
+		endpoint := "https://api.steampowered.com/ICSGOPlayers_730/GetNextMatchSharingCode/v1/?" + values.Encode()
+		req, err := http.NewRequest("GET", endpoint, nil)
+		if err != nil {
+			return nil, fmt.Errorf("failed to create request: %v", err)
+		}
+
+		resp, err := client.Do(req)
+		if err != nil {
+			return nil, fmt.Errorf("failed to fetch next sharing code: %v", err)
+		}
+
+		body, readErr := io.ReadAll(resp.Body)
+		resp.Body.Close()
+		if readErr != nil {
+			return nil, fmt.Errorf("failed to read Steam API response: %v", readErr)
+		}
+
+		if resp.StatusCode != 200 {
+			return nil, fmt.Errorf("Steam API returned %d: %s", resp.StatusCode, strings.TrimSpace(string(body)))
+		}
+
+		var parsed nextMatchSharingCodeResponse
+		if err := json.Unmarshal(body, &parsed); err != nil {
+			return nil, fmt.Errorf("failed to parse Steam API response: %v", err)
+		}
+
+		nextCode := strings.TrimSpace(parsed.Result.NextCode)
+		if nextCode == "" || nextCode == "n/a" || nextCode == currentKnownCode {
+			break
+		}
+
+		codes = append(codes, ShareCodeInfo{ShareCode: nextCode})
+		currentKnownCode = nextCode
+	}
+
+	return codes, nil
+}
+
 // GetMatchHistory just returns the links found on the page
 func GetMatchHistory(steamID, cookie string, outputDir string) ([]MatchInfo, error) {
 	urlType := "id"
@@ -27,7 +96,7 @@ func GetMatchHistory(steamID, cookie string, outputDir string) ([]MatchInfo, err
 	}
 
 	url := fmt.Sprintf("https://steamcommunity.com/%s/%s/gcpd/730?tab=matchhistorypremier", urlType, steamID)
-	
+
 	req, err := http.NewRequest("GET", url, nil)
 	if err != nil {
 		return nil, fmt.Errorf("failed to create request: %v", err)
@@ -69,10 +138,10 @@ func GetMatchHistory(steamID, cookie string, outputDir string) ([]MatchInfo, err
 		fileName := filepath.Base(link)
 		bz2Path := filepath.Join(outputDir, fileName)
 		demPath := strings.TrimSuffix(bz2Path, ".bz2")
-		
+
 		_, err := os.Stat(demPath)
 		downloaded := err == nil
-		
+
 		matchInfos = append(matchInfos, MatchInfo{
 			Link:       link,
 			FileName:   fileName,
@@ -130,7 +199,7 @@ func FetchRecentMatches(steamID, cookie string, limit int, outputDir string) ([]
 	for i := 0; i < limit; i++ {
 		link := matches[i].Link
 		log.Printf("Downloading match %d/%d: %s", i+1, limit, link)
-		
+
 		demPath, err := DownloadAndDecompress(link, outputDir)
 		if err != nil {
 			log.Printf("Warning: failed to process %s: %v", link, err)
