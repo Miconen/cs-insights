@@ -1,4 +1,6 @@
 <script lang="ts">
+    import { goto } from '$app/navigation';
+
     let steamId = '';
     let cookie = '';
     let playerName = '';
@@ -8,15 +10,26 @@
     let limit = 10;
     
     let loadingMatches = false;
-    let loadingShareCodes = false;
     let matches: any[] = [];
-    let shareCodes: any[] = [];
     let error = '';
+
+    async function fetchShareCodes(e: Event) {
+        e.preventDefault();
+        sessionStorage.setItem('cs-insights:fetch-request', JSON.stringify({
+            steamId,
+            playerName,
+            apiKey,
+            authCode,
+            knownCode,
+            limit
+        }));
+        await goto('/fetch/matches');
+    }
 
     async function fetchMatches(e: Event) {
         e.preventDefault();
-        loadingMatches = true;
         error = '';
+        loadingMatches = true;
         try {
             const res = await fetch(`http://localhost:8080/api/fetch/list?steam_id=${encodeURIComponent(steamId)}&cookie=${encodeURIComponent(cookie)}`);
             if (!res.ok) throw new Error(await res.text());
@@ -25,77 +38,6 @@
             error = e.message;
         } finally {
             loadingMatches = false;
-        }
-    }
-
-    async function fetchShareCodes(e: Event) {
-        e.preventDefault();
-        loadingShareCodes = true;
-        error = '';
-        try {
-            const params = new URLSearchParams({
-                api_key: apiKey,
-                steam_id: steamId,
-                auth_code: authCode,
-                known_code: knownCode,
-                limit: String(limit)
-            });
-            const res = await fetch(`http://localhost:8080/api/fetch/sharecodes?${params.toString()}`);
-            if (!res.ok) throw new Error(await res.text());
-            const payload = await res.json();
-            shareCodes = payload.share_codes ?? [];
-        } catch (e: any) {
-            error = e.message;
-        } finally {
-            loadingShareCodes = false;
-        }
-    }
-
-    let processingLink = '';
-    let processingStatuses: Record<string, string> = {};
-
-    function setProcessingStatus(link: string, status: string) {
-        processingStatuses = { ...processingStatuses, [link]: status };
-    }
-
-    async function processMatch(match: any) {
-        const link = match.link || match.demo_url || match.share_code;
-        if (!playerName) {
-            alert('Please enter your Player Name before processing.');
-            return;
-        }
-        processingLink = link;
-        setProcessingStatus(link, 'Requesting download...');
-
-        const timers = [
-            setTimeout(() => setProcessingStatus(link, 'Downloading demo...'), 400),
-            setTimeout(() => setProcessingStatus(link, 'Decompressing demo...'), 2500),
-            setTimeout(() => setProcessingStatus(link, 'Processing demo...'), 4500),
-            setTimeout(() => setProcessingStatus(link, 'Saving insights...'), 10000)
-        ];
-
-        try {
-            const res = await fetch('http://localhost:8080/api/fetch/process', {
-                method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({
-                    link: match.link || match.demo_url || '',
-                    share_code: match.share_code || '',
-                    player_name: playerName
-                })
-            });
-            if (!res.ok) throw new Error(await res.text());
-            const result = await res.json();
-            
-            // Mark as processed in UI
-            matches = matches.map(m => m.link === link ? { ...m, processed: true, downloaded: true } : m);
-            shareCodes = shareCodes.map(m => m.share_code === match.share_code ? { ...m, processed: true, downloaded: true } : m);
-            setProcessingStatus(link, `Done. Saved ${result.insights ?? 0} insights.`);
-        } catch (e: any) {
-            setProcessingStatus(link, `Failed: ${e.message}`);
-        } finally {
-            timers.forEach(clearTimeout);
-            processingLink = '';
         }
     }
 </script>
@@ -128,19 +70,24 @@
                     <input type="password" id="steamApiKey" bind:value={apiKey} placeholder="Steam Web API key">
                 </label>
 
+                <label class="field stack-sm" for="playerNameToken">
+                    <span class="field-label">Exact in-game name</span>
+                    <input type="text" id="playerNameToken" bind:value={playerName} placeholder="e.g. s1mple" required>
+                </label>
+
                 <label class="field stack-sm" for="steamIdToken">
                     <span class="field-label">SteamID64 <a class="field-help" href="https://steamid.io/" target="_blank" rel="noreferrer">Find ID</a></span>
-                    <input type="text" id="steamIdToken" bind:value={steamId} placeholder="7656119...">
+                    <input type="text" id="steamIdToken" bind:value={steamId} placeholder="7656119..." required>
                 </label>
 
                 <label class="field stack-sm" for="authCode">
                     <span class="field-label">Match history auth code <a class="field-help" href="https://help.steampowered.com/en/wizard/HelpWithGameIssue/?appid=730&issueid=128" target="_blank" rel="noreferrer">Find code</a></span>
-                    <input type="password" id="authCode" bind:value={authCode} placeholder="steamidkey / auth code">
+                    <input type="password" id="authCode" bind:value={authCode} placeholder="steamidkey / auth code" required>
                 </label>
 
                 <label class="field stack-sm" for="knownCode">
                     <span class="field-label">Known share code <a class="field-help" href="https://help.steampowered.com/en/wizard/HelpWithGameIssue/?appid=730&issueid=128" target="_blank" rel="noreferrer">Find share code</a></span>
-                    <input type="text" id="knownCode" bind:value={knownCode} placeholder="CSGO-xxxxx-xxxxx-xxxxx-xxxxx-xxxxx">
+                    <input type="text" id="knownCode" bind:value={knownCode} placeholder="CSGO-xxxxx-xxxxx-xxxxx-xxxxx-xxxxx" required>
                 </label>
 
                 <div class="token-actions">
@@ -148,36 +95,10 @@
                         <span>Games</span>
                         <input type="number" id="limit" bind:value={limit} min="1" max="100">
                     </label>
-                    <button class="chip primary-chip" type="submit" aria-busy={loadingShareCodes}>Fetch Share Codes</button>
+                    <button class="chip primary-chip" type="submit">Fetch Share Codes</button>
                 </div>
             </form>
 
-            {#if shareCodes.length > 0}
-                <div class="stack-sm result-panel">
-                    <div class="section-heading">Share Codes ({shareCodes.length})</div>
-                <ul>
-                    {#each shareCodes as item}
-                        <li class="share-code-item">
-                            <div>
-                                <code>{item.share_code}</code>
-                                <div class="small muted">{item.file_name}</div>
-                                {#if processingStatuses[item.share_code]}
-                                    <div class="small muted process-status">{processingStatuses[item.share_code]}</div>
-                                {/if}
-                            </div>
-                            <button
-                                class="chip"
-                                disabled={processingLink === item.share_code || item.processed}
-                                aria-busy={processingLink === item.share_code}
-                                onclick={() => processMatch(item)}
-                            >
-                                {item.processed ? 'Analyzed' : (item.downloaded ? 'Analyze Again' : 'Download & Analyze')}
-                            </button>
-                        </li>
-                    {/each}
-                </ul>
-            </div>
-        {/if}
         </article>
 
         <article class="card stack form-panel legacy-panel">
@@ -245,17 +166,7 @@
                                         {/if}
                                     </td>
                                     <td data-label="Action">
-                                        <button
-                                            class="chip"
-                                            disabled={processingLink === match.link || match.processed}
-                                            aria-busy={processingLink === match.link}
-                                            onclick={() => processMatch(match)}
-                                        >
-                                            {match.processed ? 'Analyzed' : (match.downloaded ? 'Analyze Again' : 'Download & Analyze')}
-                                        </button>
-                                        {#if processingStatuses[match.link]}
-                                            <div class="small muted process-status">{processingStatuses[match.link]}</div>
-                                        {/if}
+                                        <span class="muted small">Legacy flow: use CLI or token flow for processing.</span>
                                     </td>
                                 </tr>
                             {/each}
@@ -365,19 +276,6 @@
         width: fit-content;
     }
 
-    .result-panel {
-        border-top: 1px solid var(--color-border);
-        padding-top: var(--space-4);
-    }
-
-    .share-code-item {
-        align-items: center;
-        display: flex;
-        gap: var(--space-3);
-        justify-content: space-between;
-        padding-block: var(--space-2);
-    }
-
     .error-card {
         border-color: color-mix(in srgb, var(--color-danger) 45%, var(--color-border));
         color: var(--color-danger);
@@ -389,10 +287,6 @@
 
     .status-warning {
         color: var(--color-warning);
-    }
-
-    .process-status {
-        margin-top: var(--space-2);
     }
 
     @media (max-width: 639px) {
