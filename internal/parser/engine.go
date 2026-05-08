@@ -56,7 +56,11 @@ func (e *Engine) Parse() ([]InsightData, error) {
 	}
 	defer f.Close()
 
-	p := demoinfocs.NewParser(f)
+	// Error handling config for panic recovery during parsing
+	cfg := demoinfocs.DefaultParserConfig
+	cfg.IgnoreErrBombsiteIndexNotFound = true
+	
+	p := demoinfocs.NewParserWithConfig(f, cfg)
 	defer p.Close()
 
 	e.state.Parser = p
