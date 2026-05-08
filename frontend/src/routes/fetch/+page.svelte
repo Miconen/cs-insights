@@ -50,6 +50,11 @@
     }
 
     let processingLink = '';
+    let processingStatuses: Record<string, string> = {};
+
+    function setProcessingStatus(link: string, status: string) {
+        processingStatuses = { ...processingStatuses, [link]: status };
+    }
 
     async function processMatch(link: string) {
         if (!playerName) {
@@ -57,6 +62,15 @@
             return;
         }
         processingLink = link;
+        setProcessingStatus(link, 'Requesting download...');
+
+        const timers = [
+            setTimeout(() => setProcessingStatus(link, 'Downloading demo...'), 400),
+            setTimeout(() => setProcessingStatus(link, 'Decompressing demo...'), 2500),
+            setTimeout(() => setProcessingStatus(link, 'Processing demo...'), 4500),
+            setTimeout(() => setProcessingStatus(link, 'Saving insights...'), 10000)
+        ];
+
         try {
             const res = await fetch('http://localhost:8080/api/fetch/process', {
                 method: 'POST',
@@ -64,13 +78,15 @@
                 body: JSON.stringify({ link, player_name: playerName })
             });
             if (!res.ok) throw new Error(await res.text());
+            const result = await res.json();
             
             // Mark as processed in UI
             matches = matches.map(m => m.link === link ? { ...m, processed: true, downloaded: true } : m);
-            alert('Match parsed successfully! You can view insights on the Dashboard.');
+            setProcessingStatus(link, `Done. Saved ${result.insights ?? 0} insights.`);
         } catch (e: any) {
-            alert('Error processing match: ' + e.message);
+            setProcessingStatus(link, `Failed: ${e.message}`);
         } finally {
+            timers.forEach(clearTimeout);
             processingLink = '';
         }
     }
@@ -208,6 +224,9 @@
                                         >
                                             {match.processed ? 'Analyzed' : (match.downloaded ? 'Analyze Again' : 'Download & Analyze')}
                                         </button>
+                                        {#if processingStatuses[match.link]}
+                                            <div class="small muted process-status">{processingStatuses[match.link]}</div>
+                                        {/if}
                                     </td>
                                 </tr>
                             {/each}
@@ -242,6 +261,10 @@
 
     .status-warning {
         color: var(--color-warning);
+    }
+
+    .process-status {
+        margin-top: var(--space-2);
     }
 
     @media (max-width: 639px) {
