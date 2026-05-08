@@ -16,12 +16,12 @@ type SprayAnalyzer struct {
 	insights     []parser.InsightData
 
 	// State for tracking an active spray
-	isSpraying      bool
-	sprayStartTick  int
-	shotsFired      int
-	shotsHit        int
-	lastShotTick    int
-	lastEnemyHitID  int
+	isSpraying     bool
+	sprayStartTick int
+	shotsFired     int
+	shotsHit       int
+	lastShotTick   int
+	lastEnemyHitID int
 }
 
 func NewSprayAnalyzer(targetPlayer string, cfg config.SprayConfig) *SprayAnalyzer {
@@ -56,11 +56,15 @@ func (a *SprayAnalyzer) OnEvent(event interface{}, state *parser.GameState) {
 			return
 		}
 
+		if state.LiveEnemyCount == 0 {
+			return
+		}
+
 		// Check if this shot is part of a continuous spray.
 		// If the time since the last shot is small, we consider it the same spray.
 		// 16 ticks is ~0.25s at 64 tick rate.
 		tickDiff := state.CurrentTick - a.lastShotTick
-		
+
 		if a.isSpraying && tickDiff > 16 { // If more than ~0.25s passed since last shot, spray ended
 			a.evaluateSpray(state)
 			a.isSpraying = false
@@ -80,7 +84,7 @@ func (a *SprayAnalyzer) OnEvent(event interface{}, state *parser.GameState) {
 		if e.Attacker == nil || e.Attacker.Name != a.targetPlayer || e.Player == nil {
 			return
 		}
-		
+
 		// If we are currently spraying and hit someone, increment hits
 		if a.isSpraying {
 			a.shotsHit++
@@ -105,7 +109,7 @@ func (a *SprayAnalyzer) OnTickDone(state *parser.GameState) {
 func (a *SprayAnalyzer) evaluateSpray(state *parser.GameState) {
 	if a.shotsFired >= 7 { // Only care if they sprayed 7 or more bullets (definitely a spray, not a 3-4 bullet burst)
 		efficiency := float64(a.shotsHit) / float64(a.shotsFired)
-		
+
 		// Calculate distance if we hit someone
 		distance := 0.0
 		if a.lastEnemyHitID > 0 {

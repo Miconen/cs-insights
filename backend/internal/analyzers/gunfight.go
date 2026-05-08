@@ -11,16 +11,16 @@ import (
 )
 
 type Gunfight struct {
-	EnemyID              int
-	EnemyName            string
-	StartTick            int
-	TargetFirstShotTick  int
-	EnemyFirstShotTick   int
-	TargetFirstHitTick   int
-	EnemyFirstHitTick    int
-	IsActive             bool
-	CrosshairPitchDiff   float64
-	CrosshairDirection   string
+	EnemyID             int
+	EnemyName           string
+	StartTick           int
+	TargetFirstShotTick int
+	EnemyFirstShotTick  int
+	TargetFirstHitTick  int
+	EnemyFirstHitTick   int
+	IsActive            bool
+	CrosshairPitchDiff  float64
+	CrosshairDirection  string
 
 	// First Bullet Accuracy
 	TargetFirstBulletAccuracy float64
@@ -57,12 +57,16 @@ func (a *GunfightAnalyzer) Name() string {
 }
 
 func (a *GunfightAnalyzer) OnEvent(event interface{}, state *parser.GameState) {
+	if state.LiveEnemyCount == 0 {
+		return
+	}
+
 	switch e := event.(type) {
 	case events.WeaponFire:
 		if e.Shooter == nil {
 			return
 		}
-		
+
 		if e.Weapon.Class() == common.EqClassGrenade || e.Weapon.Class() == common.EqClassEquipment {
 			return
 		}
@@ -96,7 +100,7 @@ func (a *GunfightAnalyzer) OnEvent(event interface{}, state *parser.GameState) {
 				// so for simplicity in V1 of this feature, we will estimate based on view movement
 				// or just tag it based on general movement.
 				// For now, let's just log the accuracy without the stance since Velocity() is not available in v5.
-				duel.TargetWasPeeking = false 
+				duel.TargetWasPeeking = false
 			}
 		} else if closestEnemy.Name == a.targetPlayer {
 			duel := a.getOrCreateDuel(state, e.Shooter)
@@ -125,7 +129,7 @@ func (a *GunfightAnalyzer) OnEvent(event interface{}, state *parser.GameState) {
 		if e.Killer == nil || e.Victim == nil {
 			return
 		}
-		
+
 		if e.Victim.Name == a.targetPlayer {
 			// Target died
 			duel, exists := a.activeDuels[e.Killer.UserID]
@@ -146,8 +150,8 @@ func (a *GunfightAnalyzer) OnEvent(event interface{}, state *parser.GameState) {
 
 func (a *GunfightAnalyzer) OnTickDone(state *parser.GameState) {
 	targetPlayer := getPlayerByName(state, a.targetPlayer)
-	if targetPlayer == nil || !targetPlayer.IsAlive() {
-		// If target is dead, clear duels (handled mostly by Kill event, but fallback)
+	if targetPlayer == nil || !targetPlayer.IsAlive() || state.LiveEnemyCount == 0 {
+		// If target is dead or no enemies remain, clear active duels.
 		for id := range a.activeDuels {
 			delete(a.activeDuels, id)
 		}
@@ -173,19 +177,19 @@ func (a *GunfightAnalyzer) OnTickDone(state *parser.GameState) {
 		}
 
 		inSight := pDiff < 45 && yDiff < 45
-		
+
 		duel, exists := a.activeDuels[p.UserID]
 		if inSight {
 			if !exists {
 				duel = a.getOrCreateDuel(state, p)
-				
+
 				// Capture Crosshair Placement on first sight
 				enemyEyes, ok := p.PositionEyes()
 				if ok {
 					pitchToHead, _ := calculateAngles(targetEyes, enemyEyes)
 					pDiffHead := math.Abs(float64(targetPlayer.ViewDirectionX() - pitchToHead))
 					duel.CrosshairPitchDiff = pDiffHead
-					
+
 					if targetPlayer.ViewDirectionX() > pitchToHead {
 						duel.CrosshairDirection = "too low (at chest/feet)"
 					} else {
@@ -228,7 +232,7 @@ func (a *GunfightAnalyzer) getClosestEnemy(state *parser.GameState, player *comm
 			continue
 		}
 		pitch, yaw := calculateAngles(eyes, p.Position())
-		
+
 		pitchDiff := math.Abs(float64(player.ViewDirectionX() - pitch))
 		yawDiff := math.Abs(float64(player.ViewDirectionY() - yaw))
 		if yawDiff > 180 {
@@ -279,13 +283,13 @@ func (a *GunfightAnalyzer) resolveDuel(state *parser.GameState, duel *Gunfight, 
 	}
 
 	metaBytes, _ := json.Marshal(meta)
-	
+
 	severity := "Low"
 	desc := fmt.Sprintf("Duel vs %s (Won)", duel.EnemyName)
 	if winner != a.targetPlayer {
 		severity = "High"
 		desc = fmt.Sprintf("Duel lost vs %s", duel.EnemyName)
-		
+
 		// Add some contextual text based on the math
 		if meta.TargetTTDMs == 0 && meta.EnemyTTDMs > 0 {
 			desc += " - You dealt no damage."
