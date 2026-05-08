@@ -104,6 +104,53 @@
         return data.insights.filter((insight: any) => insight.MatchName === selectedMatch);
     }
 
+    // Group consecutive insights that are within 100 ticks of each other
+    // into clusters. A cluster with >1 entry renders as a collapsible group.
+    type Cluster = { lead: any; rest: any[]; open: boolean };
+
+    function clusterInsights(insights: any[]): Cluster[] {
+        if (!insights.length) return [];
+        const clusters: Cluster[] = [];
+        let current: Cluster = { lead: insights[0], rest: [], open: false };
+
+        for (let i = 1; i < insights.length; i++) {
+            const prev = insights[i - 1];
+            const curr = insights[i];
+            const sameRound = curr.Round === prev.Round;
+            const closeTicks = Math.abs(curr.Tick - prev.Tick) <= 100;
+
+            if (sameRound && closeTicks) {
+                current.rest.push(curr);
+            } else {
+                clusters.push(current);
+                current = { lead: curr, rest: [], open: false };
+            }
+        }
+        clusters.push(current);
+        return clusters;
+    }
+
+    let clusters: Cluster[] = [];
+    $: clusters = clusterInsights(visibleInsights());
+
+    function toggleCluster(cluster: Cluster) {
+        cluster.open = !cluster.open;
+        clusters = clusters; // trigger reactivity
+    }
+
+    function copytick(tick: number, btn: HTMLElement) {
+        navigator.clipboard.writeText(`demo_gototick ${tick}`);
+        const orig = btn.innerText;
+        btn.innerText = 'Copied!';
+        setTimeout(() => btn.innerText = orig, 2000);
+    }
+
+    const severityColor: Record<string, string> = {
+        High:   'var(--color-danger)',
+        Medium: 'var(--color-warning)',
+        Low:    'var(--color-accent)',
+    };
+
     function formatDate(value: string) {
         if (!value) return 'Unknown date';
         return new Intl.DateTimeFormat(undefined, {
@@ -200,60 +247,78 @@
                 </label>
             {/if}
         </div>
-        {#each visibleInsights() as insight}
-            <div class="card stack-sm">
-                <div class="row-between incident-head">
-                    <div class="stack-xs">
-                        <strong>{insight.Type}</strong>
-                        <span class="small muted">{insight.map_name || 'Unknown map'} · {insight.match_display || insight.MatchName}</span>
+        {#each clusters as cluster}
+            <!-- Single incident or cluster lead -->
+            <div class="incident-card card" style="--sev: {severityColor[cluster.lead.Severity] ?? 'var(--color-accent)'}">
+                <div class="incident-strip" style="background: {severityColor[cluster.lead.Severity] ?? 'var(--color-accent)'}"></div>
+
+                <div class="incident-body">
+                    <div class="incident-head">
+                        <div class="incident-title">
+                            <span class="incident-type">{cluster.lead.Type}</span>
+                            <span class="small muted">{cluster.lead.map_name || 'Unknown map'} · {cluster.lead.match_display || ''}</span>
+                        </div>
+                        <div class="incident-coords mono small muted">
+                            R{cluster.lead.Round} · T{cluster.lead.Tick}
+                        </div>
                     </div>
-                    <span class="small muted mono">Round {insight.Round} | Tick {insight.Tick}</span>
-                </div>
-                <div class="incident-meta small muted">
-                    <span>{formatDate(insight.CreatedAt)}</span>
-                    <span>{insight.Severity}</span>
-                </div>
-                <p>{insight.Description}</p>
-                
-                {#if insight.Type === "Gunfight" && insight.meta}
-                    <blockquote>
-                        <p><strong>Duel Timeline</strong></p>
-                        <ul>
-                            <li><small>0ms:</small> Spotted</li>
-                            {#if insight.meta.target_shot_ms > 0}
-                                <li><small>{Math.round(insight.meta.target_shot_ms)}ms:</small> You fired</li>
+
+                    <p class="incident-desc">{cluster.lead.Description}</p>
+
+                    {#if cluster.lead.Type === "Gunfight" && cluster.lead.meta}
+                        <div class="duel-timeline">
+                            <div class="timeline-row"><span class="t-time">0ms</span><span class="t-label">Spotted</span></div>
+                            {#if cluster.lead.meta.target_shot_ms > 0}
+                                <div class="timeline-row you"><span class="t-time">{Math.round(cluster.lead.meta.target_shot_ms)}ms</span><span class="t-label">You fired</span></div>
                             {/if}
-                            {#if insight.meta.enemy_shot_ms > 0}
-                                <li><small>{Math.round(insight.meta.enemy_shot_ms)}ms:</small> Enemy fired</li>
+                            {#if cluster.lead.meta.enemy_shot_ms > 0}
+                                <div class="timeline-row enemy"><span class="t-time">{Math.round(cluster.lead.meta.enemy_shot_ms)}ms</span><span class="t-label">Enemy fired</span></div>
                             {/if}
-                            {#if insight.meta.target_ttd_ms > 0}
-                                <li><small>{Math.round(insight.meta.target_ttd_ms)}ms:</small> You dealt damage</li>
+                            {#if cluster.lead.meta.target_ttd_ms > 0}
+                                <div class="timeline-row you bold"><span class="t-time">{Math.round(cluster.lead.meta.target_ttd_ms)}ms</span><span class="t-label">You dealt damage</span></div>
                             {/if}
-                            {#if insight.meta.enemy_ttd_ms > 0}
-                                <li><small>{Math.round(insight.meta.enemy_ttd_ms)}ms:</small> Enemy dealt damage</li>
+                            {#if cluster.lead.meta.enemy_ttd_ms > 0}
+                                <div class="timeline-row enemy bold"><span class="t-time">{Math.round(cluster.lead.meta.enemy_ttd_ms)}ms</span><span class="t-label">Enemy dealt damage</span></div>
                             {/if}
-                        </ul>
-                        {#if insight.meta.crosshair_pitch > 0}
-                            <hr>
-                            <small><strong>Crosshair Placement:</strong> At the start of the duel, your crosshair was {insight.meta.crosshair_pitch.toFixed(1)}° {insight.meta.crosshair_dir}.</small>
+                            {#if cluster.lead.meta.crosshair_pitch > 0}
+                                <div class="timeline-note">Crosshair {cluster.lead.meta.crosshair_pitch.toFixed(1)}° {cluster.lead.meta.crosshair_dir} at duel start</div>
+                            {/if}
+                            {#if cluster.lead.meta.first_bullet_acc > 0}
+                                <div class="timeline-note">First bullet {cluster.lead.meta.first_bullet_acc.toFixed(1)}° off head ({cluster.lead.meta.was_peeking ? 'Peeking' : 'Holding'})</div>
+                            {/if}
+                        </div>
+                    {/if}
+
+                    <div class="incident-footer">
+                        <button class="chip" onclick={(e) => copytick(cluster.lead.Tick, e.currentTarget)} title="Copy console command">
+                            demo_gototick {cluster.lead.Tick}
+                        </button>
+                        {#if cluster.rest.length > 0}
+                            <button class="chip cluster-toggle" onclick={() => toggleCluster(cluster)}>
+                                {cluster.open ? '▲' : '▼'} {cluster.rest.length} nearby {cluster.rest.length === 1 ? 'event' : 'events'}
+                            </button>
                         {/if}
-                        {#if insight.meta.first_bullet_acc > 0}
-                            <br>
-                            <small><strong>First Bullet Accuracy:</strong> When you fired your first shot, your crosshair was {insight.meta.first_bullet_acc.toFixed(1)}° off the enemy's head (stance: {insight.meta.was_peeking ? 'Peeking' : 'Holding'}).</small>
-                        {/if}
-                    </blockquote>
-                {/if}
-                <div>
-                    <button class="chip" onclick={(e) => {
-                                navigator.clipboard.writeText(`demo_gototick ${insight.Tick}`);
-                                const btn = e.currentTarget;
-                                const originalText = btn.innerText;
-                                btn.innerText = 'Copied!';
-                                setTimeout(() => btn.innerText = originalText, 2000);
-                            }}
-                            title="Click to copy console command">
-                        demo_gototick {insight.Tick}
-                    </button>
+                    </div>
+
+                    <!-- Collapsed cluster items -->
+                    {#if cluster.rest.length > 0 && cluster.open}
+                        <div class="cluster-children">
+                            {#each cluster.rest as sub}
+                                <div class="cluster-child">
+                                    <div class="incident-head">
+                                        <div class="incident-title">
+                                            <span class="incident-type small">{sub.Type}</span>
+                                        </div>
+                                        <div class="incident-coords mono small muted">T{sub.Tick}</div>
+                                    </div>
+                                    <p class="incident-desc small">{sub.Description}</p>
+                                    <button class="chip small-chip" onclick={(e) => copytick(sub.Tick, e.currentTarget)}>
+                                        demo_gototick {sub.Tick}
+                                    </button>
+                                </div>
+                            {/each}
+                        </div>
+                    {/if}
                 </div>
             </div>
         {/each}
@@ -315,10 +380,7 @@
         color: var(--color-danger);
     }
 
-    .incident-head {
-        align-items: flex-start;
-    }
-
+    /* ---- Incident toolbar ---- */
     .incident-toolbar {
         align-items: end;
         gap: var(--space-4);
@@ -332,15 +394,129 @@
         margin-bottom: 0;
     }
 
-    .incident-meta {
+    /* ---- Incident card ---- */
+    .incident-card {
+        display: flex;
+        gap: 0;
+        padding: 0;
+        overflow: hidden;
+    }
+
+    .incident-strip {
+        flex: 0 0 4px;
+        min-width: 4px;
+        background: var(--sev, var(--color-accent));
+    }
+
+    .incident-body {
+        flex: 1;
+        min-width: 0;
+        display: flex;
+        flex-direction: column;
+        gap: var(--space-3);
+        padding: var(--space-4);
+    }
+
+    .incident-head {
+        display: flex;
+        justify-content: space-between;
+        align-items: flex-start;
+        gap: var(--space-3);
+    }
+
+    .incident-title {
+        display: flex;
+        flex-direction: column;
+        gap: 0.2rem;
+        min-width: 0;
+    }
+
+    .incident-type {
+        font-weight: 700;
+        font-size: 0.95rem;
+    }
+
+    .incident-coords {
+        flex-shrink: 0;
+        white-space: nowrap;
+    }
+
+    .incident-desc {
+        margin: 0;
+        font-size: 0.9rem;
+    }
+
+    .incident-footer {
         display: flex;
         flex-wrap: wrap;
         gap: var(--space-2);
+        margin-top: var(--space-1);
     }
 
-    .incident-meta span + span::before {
-        content: "•";
-        margin-right: var(--space-2);
+    .cluster-toggle {
+        background: transparent;
+        border-color: var(--color-border);
+        color: var(--color-text-muted);
+        font-size: 0.75rem;
+    }
+
+    .cluster-children {
+        border-top: 1px solid var(--color-border);
+        padding-top: var(--space-3);
+        display: flex;
+        flex-direction: column;
+        gap: var(--space-3);
+    }
+
+    .cluster-child {
+        display: flex;
+        flex-direction: column;
+        gap: var(--space-2);
+        background: var(--color-surface-2);
+        border-radius: var(--radius);
+        padding: var(--space-3);
+    }
+
+    .small-chip {
+        font-size: 0.7rem;
+        height: auto;
+        padding: 0.15rem 0.5rem;
+    }
+
+    /* ---- Duel timeline ---- */
+    .duel-timeline {
+        background: var(--color-surface-2);
+        border-radius: var(--radius);
+        padding: var(--space-3);
+        display: flex;
+        flex-direction: column;
+        gap: 0.25rem;
+    }
+
+    .timeline-row {
+        display: flex;
+        gap: var(--space-3);
+        font-family: var(--font-mono);
+        font-size: 0.82rem;
+        color: var(--color-text-muted);
+    }
+
+    .timeline-row.you { color: var(--color-accent); }
+    .timeline-row.enemy { color: var(--color-danger); }
+    .timeline-row.bold { font-weight: 600; }
+
+    .t-time {
+        width: 5ch;
+        flex-shrink: 0;
+        text-align: right;
+    }
+
+    .timeline-note {
+        font-size: 0.8rem;
+        color: var(--color-text-muted);
+        margin-top: var(--space-1);
+        border-top: 1px solid var(--color-border);
+        padding-top: var(--space-1);
     }
 
     @media (max-width: 639px) {

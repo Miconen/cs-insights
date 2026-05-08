@@ -42,6 +42,13 @@ func (a *CounterStrafeAnalyzer) OnEvent(event interface{}, state *parser.GameSta
 			return
 		}
 
+		// Pistols and SMGs (except Desert Eagle) have natural movement accuracy penalties
+		// built into the game, so counter-strafing is less meaningful for them.
+		if e.Weapon.Type != common.EqDeagle &&
+			(e.Weapon.Class() == common.EqClassPistols || e.Weapon.Class() == common.EqClassSMG) {
+			return
+		}
+
 		// Use the speed calculated in OnTickDone
 		if a.speed2D > a.cfg.MaxVelocityThreshold {
 			// Check if there is an enemy roughly in front of them to ensure it's an actual engagement

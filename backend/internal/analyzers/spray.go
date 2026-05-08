@@ -6,6 +6,7 @@ import (
 
 	"cs-insights/internal/config"
 	"cs-insights/internal/parser"
+	"github.com/markus-wa/demoinfocs-golang/v5/pkg/demoinfocs/common"
 	"github.com/markus-wa/demoinfocs-golang/v5/pkg/demoinfocs/events"
 )
 
@@ -38,6 +39,20 @@ func (a *SprayAnalyzer) OnEvent(event interface{}, state *parser.GameState) {
 	switch e := event.(type) {
 	case events.WeaponFire:
 		if e.Shooter == nil || e.Shooter.Name != a.targetPlayer {
+			return
+		}
+
+		// Exclude pistols (all classes) and semi-automatic weapons.
+		// Spraying is only meaningful analysis for automatic rifles, SMGs, and heavy weapons.
+		if e.Weapon.Class() == common.EqClassPistols {
+			return
+		}
+		if e.Weapon.Class() == common.EqClassEquipment || e.Weapon.Class() == common.EqClassGrenade {
+			return
+		}
+		// Exclude semi-auto snipers (AWP, Scout, Scar20, G3SG1)
+		switch e.Weapon.Type {
+		case common.EqAWP, common.EqSSG08, common.EqScar20, common.EqG3SG1:
 			return
 		}
 

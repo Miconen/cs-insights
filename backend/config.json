@@ -13,6 +13,9 @@
     },
     "crosshair_height": {
       "max_vertical_distance": 10.0
+    },
+    "spray": {
+      "long_range_threshold": 650.0
     }
   }
 }
