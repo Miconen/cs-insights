@@ -74,10 +74,28 @@
         }
     });
 
+    let searchTimeout: any;
+
+    function handleInput() {
+        clearTimeout(searchTimeout);
+        searchTimeout = setTimeout(() => {
+            if (playerName.trim().length > 0) {
+                window.history.replaceState({}, '', `?player=${encodeURIComponent(playerName.trim())}`);
+                fetchData();
+            } else {
+                data = null;
+                window.history.replaceState({}, '', '/');
+            }
+        }, 400); // 400ms debounce
+    }
+
     function handleSubmit(e: Event) {
         e.preventDefault();
-        window.history.pushState({}, '', `?player=${encodeURIComponent(playerName)}`);
-        fetchData();
+        clearTimeout(searchTimeout);
+        if (playerName.trim()) {
+            window.history.pushState({}, '', `?player=${encodeURIComponent(playerName.trim())}`);
+            fetchData();
+        }
     }
 </script>
 
@@ -97,7 +115,7 @@
         <form on:submit={handleSubmit}>
             <label for="player">
                 Enter Player Name
-                <input type="text" bind:value={playerName} id="player" placeholder="e.g. s1mple" required>
+                <input type="text" bind:value={playerName} oninput={handleInput} id="player" placeholder="e.g. s1mple" required>
             </label>
             <button type="submit" aria-busy={loading}>View Insights</button>
         </form>
