@@ -48,7 +48,7 @@
     <div class="row-between page-head">
         <div>
             <h1 class="display">Fetch Recent Matches</h1>
-            <p class="muted">Scrape your GCPD page to analyze Premier games.</p>
+            <p class="muted">List recent Premier matches and download demos when a replay URL is available.</p>
         </div>
     </div>
 
@@ -58,7 +58,7 @@
                 <span class="eyebrow">Recommended</span>
                 <h2>Steam Match History Token</h2>
                 <p class="muted small">
-                    Uses Valve's official match-history API. Safer than using a browser-session cookie. Share codes can be downloaded and analyzed directly.
+                    Uses Valve's official match-history API. Safer than using a browser-session cookie, but this no-login flow only returns share-code metadata, not replay download URLs.
                 </p>
             </div>
 
@@ -160,7 +160,7 @@
                                         {/if}
                                     </td>
                                     <td data-label="Action">
-                                        <span class="muted small">Legacy flow: use CLI or token flow for processing.</span>
+                                        <span class="muted small">Direct replay URL available through this legacy flow.</span>
                                     </td>
                                 </tr>
                             {/each}

@@ -106,7 +106,7 @@ func (s *Server) handleFetchShareCodesAPI(w http.ResponseWriter, r *http.Request
 	w.Header().Set("Content-Type", "application/json")
 	json.NewEncoder(w).Encode(map[string]interface{}{
 		"share_codes": codes,
-		"note":        "Share codes are fetched via Valve's official match-history token API. Demo downloading from share codes is not implemented yet; use the legacy GCPD method for direct replay downloads for now.",
+		"note":        "Share codes are fetched via Valve's official match-history token API. This no-login flow does not expose replay download URLs; use the legacy GCPD method for direct replay downloads for now.",
 	})
 }
 
