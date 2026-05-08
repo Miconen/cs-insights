@@ -97,6 +97,10 @@ func (e *Engine) Parse() ([]InsightData, error) {
 		e.notifyEvent(event)
 	})
 
+	p.RegisterEventHandler(func(event events.Kill) {
+		e.notifyEvent(event)
+	})
+
 	p.RegisterEventHandler(func(event events.PlayerSpottersChanged) {
 		e.notifyEvent(event)
 	})
@@ -137,7 +141,9 @@ func (e *Engine) Parse() ([]InsightData, error) {
 		}
 		if targetTeam != 0 {
 			for _, participant := range p.GameState().Participants().Playing() {
-				if int(participant.Team) != targetTeam && participant.IsAlive() {
+				team := int(participant.Team)
+				// 2 = T, 3 = CT
+				if (team == 2 || team == 3) && team != targetTeam && participant.IsAlive() {
 					liveEnemies++
 				}
 			}
