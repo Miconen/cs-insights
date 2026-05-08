@@ -1,17 +1,21 @@
 package parser
 
 import (
+	"encoding/json"
 	"log"
 	"os"
+	"path/filepath"
 
 	demoinfocs "github.com/markus-wa/demoinfocs-golang/v5/pkg/demoinfocs"
 	events "github.com/markus-wa/demoinfocs-golang/v5/pkg/demoinfocs/events"
+	msg "github.com/markus-wa/demoinfocs-golang/v5/pkg/demoinfocs/msg"
 )
 
 type GameState struct {
-	CurrentTick   int
-	CurrentRound  int
-	Parser        demoinfocs.Parser
+	CurrentTick  int
+	CurrentRound int
+	MapName      string
+	Parser       demoinfocs.Parser
 }
 
 type Analyzer interface {
@@ -31,18 +35,18 @@ type InsightData struct {
 }
 
 type Engine struct {
-	demoPath    string
+	demoPath     string
 	targetPlayer string
 	analyzers    []Analyzer
-	state       *GameState
+	state        *GameState
 }
 
 func NewEngine(demoPath string, targetPlayer string) *Engine {
 	return &Engine{
-		demoPath:    demoPath,
+		demoPath:     demoPath,
 		targetPlayer: targetPlayer,
-		analyzers:   []Analyzer{},
-		state:       &GameState{},
+		analyzers:    []Analyzer{},
+		state:        &GameState{},
 	}
 }
 
@@ -61,7 +65,7 @@ func (e *Engine) Parse() ([]InsightData, error) {
 	cfg := demoinfocs.DefaultParserConfig
 	cfg.IgnoreErrBombsiteIndexNotFound = true
 	cfg.IgnorePacketEntitiesPanic = true
-	
+
 	// We must recover gracefully or the parser will OOM leak if it loops errors
 	p := demoinfocs.NewParserWithConfig(f, cfg)
 	defer p.Close()
@@ -69,6 +73,12 @@ func (e *Engine) Parse() ([]InsightData, error) {
 	e.state.Parser = p
 
 	// Register event handlers
+	p.RegisterNetMessageHandler(func(message *msg.CSVCMsg_ServerInfo) {
+		if message.GetMapName() != "" {
+			e.state.MapName = message.GetMapName()
+		}
+	})
+
 	p.RegisterEventHandler(func(event events.RoundStart) {
 		e.state.CurrentRound++
 		e.notifyEvent(event)
@@ -77,7 +87,7 @@ func (e *Engine) Parse() ([]InsightData, error) {
 	p.RegisterEventHandler(func(event events.WeaponFire) {
 		e.notifyEvent(event)
 	})
-	
+
 	p.RegisterEventHandler(func(event events.PlayerHurt) {
 		e.notifyEvent(event)
 	})
@@ -101,7 +111,6 @@ func (e *Engine) Parse() ([]InsightData, error) {
 		// Do nothing to suppress the spam
 	})
 
-
 	// Tick processing
 	for {
 		more, err := p.ParseNextFrame()
@@ -115,7 +124,7 @@ func (e *Engine) Parse() ([]InsightData, error) {
 		}
 
 		e.state.CurrentTick = p.CurrentFrame()
-		
+
 		for _, a := range e.analyzers {
 			a.OnTickDone(e.state)
 		}
@@ -126,7 +135,35 @@ func (e *Engine) Parse() ([]InsightData, error) {
 		allInsights = append(allInsights, a.GetInsights()...)
 	}
 
+	for i := range allInsights {
+		allInsights[i].Metadata = mergeMatchMetadata(allInsights[i].Metadata, map[string]interface{}{
+			"map":       e.state.MapName,
+			"demo_file": filepath.Base(e.demoPath),
+		})
+	}
+
 	return allInsights, nil
+}
+
+func mergeMatchMetadata(existing string, additions map[string]interface{}) string {
+	metadata := map[string]interface{}{}
+	if existing != "" {
+		if err := json.Unmarshal([]byte(existing), &metadata); err != nil {
+			metadata = map[string]interface{}{}
+		}
+	}
+
+	for key, value := range additions {
+		if value != nil && value != "" {
+			metadata[key] = value
+		}
+	}
+
+	encoded, err := json.Marshal(metadata)
+	if err != nil {
+		return existing
+	}
+	return string(encoded)
 }
 
 func (e *Engine) notifyEvent(event interface{}) {

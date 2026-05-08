@@ -3,12 +3,15 @@
     import { page } from '$app/stores';
     import Chart from 'chart.js/auto';
 
-    let playerName = $page.url.searchParams.get('player') || '';
+    const initialPlayer = $page.url.searchParams.get('player') || '';
+    let playerName = initialPlayer;
+    let searchInput = initialPlayer;
     let data: any = null;
     let loading = !!playerName;
     let error = '';
     let chartCanvas: HTMLCanvasElement;
     let chartInstance: any;
+    let selectedMatch = 'all';
 
     async function fetchData() {
         if (!playerName) return;
@@ -74,28 +77,31 @@
         }
     });
 
-    let searchTimeout: any;
-
-    function handleInput() {
-        clearTimeout(searchTimeout);
-        searchTimeout = setTimeout(() => {
-            if (playerName.trim().length > 0) {
-                window.history.replaceState({}, '', `?player=${encodeURIComponent(playerName.trim())}`);
-                fetchData();
-            } else {
-                data = null;
-                window.history.replaceState({}, '', '/');
-            }
-        }, 400); // 400ms debounce
-    }
-
     function handleSubmit(e: Event) {
         e.preventDefault();
-        clearTimeout(searchTimeout);
-        if (playerName.trim()) {
-            window.history.pushState({}, '', `?player=${encodeURIComponent(playerName.trim())}`);
+        if (searchInput.trim()) {
+            playerName = searchInput.trim();
+            selectedMatch = 'all';
+            window.history.pushState({}, '', `?player=${encodeURIComponent(playerName)}`);
             fetchData();
         }
+    }
+
+    function visibleInsights() {
+        if (!data?.insights) return [];
+        if (selectedMatch === 'all') return data.insights;
+        return data.insights.filter((insight: any) => insight.MatchName === selectedMatch);
+    }
+
+    function formatDate(value: string) {
+        if (!value) return 'Unknown date';
+        return new Intl.DateTimeFormat(undefined, {
+            year: 'numeric',
+            month: 'short',
+            day: '2-digit',
+            hour: '2-digit',
+            minute: '2-digit'
+        }).format(new Date(value));
     }
 </script>
 
@@ -114,7 +120,7 @@
             <form class="search-form" onsubmit={handleSubmit}>
                 <label class="stack-sm" for="player">
                     Enter player name
-                    <input type="text" bind:value={playerName} oninput={handleInput} id="player" placeholder="e.g. s1mple" required>
+                    <input type="text" bind:value={searchInput} id="player" placeholder="e.g. s1mple" required>
                 </label>
                 <button class="chip primary-chip" type="submit" aria-busy={loading}>View Insights</button>
             </form>
@@ -127,7 +133,7 @@
             <h1 class="display">Performance Dashboard</h1>
             <p class="muted">Analysis for <mark>{playerName}</mark></p>
         </div>
-        <button class="chip" onclick={() => { playerName = ''; data = null; window.history.pushState({}, '', '/'); }}>Back to Search</button>
+        <button class="chip" onclick={() => { playerName = ''; searchInput = ''; data = null; selectedMatch = 'all'; window.history.pushState({}, '', '/'); }}>Back to Search</button>
     </div>
 
     {#if loading}
@@ -169,12 +175,32 @@
             </div>
         </div>
 
-        <div class="section-heading">Raw Incident Log</div>
-        {#each data.insights as insight}
+        <div class="row-between incident-toolbar">
+            <div class="section-heading">Raw Incident Log</div>
+            {#if data.summary?.games?.length > 1}
+                <label class="game-filter" for="game-filter">
+                    Filter by game
+                    <select id="game-filter" bind:value={selectedMatch}>
+                        <option value="all">All games</option>
+                        {#each data.summary.games as game}
+                            <option value={game.match_name}>{game.map_name || 'Unknown map'} · {game.display_name} ({game.incident_count})</option>
+                        {/each}
+                    </select>
+                </label>
+            {/if}
+        </div>
+        {#each visibleInsights() as insight}
             <div class="card stack-sm">
                 <div class="row-between incident-head">
+                    <div class="stack-xs">
                         <strong>{insight.Type}</strong>
-                        <span class="small muted mono">Round {insight.Round} | Tick {insight.Tick}</span>
+                        <span class="small muted">{insight.map_name || 'Unknown map'} · {insight.match_display || insight.MatchName}</span>
+                    </div>
+                    <span class="small muted mono">Round {insight.Round} | Tick {insight.Tick}</span>
+                </div>
+                <div class="incident-meta small muted">
+                    <span>{formatDate(insight.CreatedAt)}</span>
+                    <span>{insight.Severity}</span>
                 </div>
                 <p>{insight.Description}</p>
                 
@@ -231,7 +257,8 @@
     }
 
     .hero-card {
-        max-width: 42rem;
+        width: 100%;
+        max-width: none;
         padding: var(--space-6);
         background: linear-gradient(135deg, var(--color-surface), color-mix(in srgb, var(--color-accent) 8%, var(--color-surface-2)));
     }
@@ -245,6 +272,7 @@
         gap: var(--space-3);
         align-items: end;
         flex-wrap: wrap;
+        max-width: 48rem;
     }
 
     .search-form label {
@@ -260,6 +288,7 @@
         color: var(--color-accent-contrast);
         border-color: var(--color-accent);
         height: 2.25rem;
+        flex: 0 0 auto;
     }
 
     .chart-wrap {
@@ -279,9 +308,34 @@
         align-items: flex-start;
     }
 
+    .incident-toolbar {
+        align-items: end;
+        gap: var(--space-4);
+    }
+
+    .game-filter {
+        min-width: min(24rem, 100%);
+    }
+
+    .game-filter select {
+        margin-bottom: 0;
+    }
+
+    .incident-meta {
+        display: flex;
+        flex-wrap: wrap;
+        gap: var(--space-2);
+    }
+
+    .incident-meta span + span::before {
+        content: "•";
+        margin-right: var(--space-2);
+    }
+
     @media (max-width: 639px) {
         .dashboard-head,
-        .incident-head {
+        .incident-head,
+        .incident-toolbar {
             align-items: flex-start;
             flex-direction: column;
         }
@@ -290,9 +344,12 @@
             padding: var(--space-4);
         }
 
-        .search-form button {
-            width: 100%;
-            justify-content: center;
+        .search-form {
+            align-items: flex-start;
+        }
+
+        .primary-chip {
+            width: auto;
         }
     }
 </style>

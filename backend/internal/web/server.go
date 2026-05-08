@@ -7,9 +7,12 @@ import (
 	"cs-insights/internal/fetcher"
 	"cs-insights/internal/parser"
 	"encoding/json"
+	"fmt"
 	"log"
 	"net/http"
+	"path/filepath"
 	"sort"
+	"strings"
 )
 
 type Server struct {
@@ -143,11 +146,21 @@ type SummaryData struct {
 	LostDuels      int            `json:"lost_duels"`
 	AvgTTDDiffMs   int            `json:"avg_ttd_diff_ms"`
 	CountsByType   map[string]int `json:"counts_by_type"`
+	Games          []GameSummary  `json:"games"`
+}
+
+type GameSummary struct {
+	MatchName     string `json:"match_name"`
+	DisplayName   string `json:"display_name"`
+	MapName       string `json:"map_name"`
+	IncidentCount int    `json:"incident_count"`
 }
 
 type RichInsight struct {
 	db.Insight
-	Meta map[string]interface{} `json:"meta"`
+	Meta         map[string]interface{} `json:"meta"`
+	MatchDisplay string                 `json:"match_display"`
+	MapName      string                 `json:"map_name"`
 }
 
 func (s *Server) handleInsightsAPI(w http.ResponseWriter, r *http.Request) {
@@ -165,6 +178,8 @@ func (s *Server) handleInsightsAPI(w http.ResponseWriter, r *http.Request) {
 
 	var richInsights []RichInsight
 	counts := make(map[string]int)
+	gameCounts := make(map[string]int)
+	gameMaps := make(map[string]string)
 
 	lostDuels := 0
 	totalTTDDiff := 0.0
@@ -175,6 +190,12 @@ func (s *Server) handleInsightsAPI(w http.ResponseWriter, r *http.Request) {
 		ri := RichInsight{Insight: i, Meta: make(map[string]interface{})}
 		if i.Metadata != "" {
 			json.Unmarshal([]byte(i.Metadata), &ri.Meta)
+		}
+		ri.MatchDisplay = displayMatchName(i.MatchName)
+		ri.MapName = mapNameFromMeta(ri.Meta)
+		gameCounts[i.MatchName]++
+		if ri.MapName != "" {
+			gameMaps[i.MatchName] = ri.MapName
 		}
 
 		// Extract gunfight data for advice
@@ -197,7 +218,7 @@ func (s *Server) handleInsightsAPI(w http.ResponseWriter, r *http.Request) {
 		avgDiff := 0
 		if totalTTDDiff > 0 {
 			avgDiff = int(totalTTDDiff / float64(lostDuels))
-			advice = append(advice, "Gunfights: You lost "+string(rune(lostDuels+'0'))+" duels. In the fights where you both dealt damage, you were on average "+string(rune(avgDiff+'0'))+"ms slower to deal damage than the enemy. Work on your reaction time and raw aim speed.")
+			advice = append(advice, fmt.Sprintf("Gunfights: You lost %d duels. In the fights where you both dealt damage, you were on average %dms slower to deal damage than the enemy.", lostDuels, avgDiff))
 		}
 	}
 
@@ -247,6 +268,19 @@ func (s *Server) handleInsightsAPI(w http.ResponseWriter, r *http.Request) {
 		avgTTD = int(totalTTDDiff / float64(lostDuels))
 	}
 
+	games := make([]GameSummary, 0, len(gameCounts))
+	for matchName, count := range gameCounts {
+		games = append(games, GameSummary{
+			MatchName:     matchName,
+			DisplayName:   displayMatchName(matchName),
+			MapName:       gameMaps[matchName],
+			IncidentCount: count,
+		})
+	}
+	sort.Slice(games, func(i, j int) bool {
+		return games[i].DisplayName < games[j].DisplayName
+	})
+
 	response := APIResponse{
 		PlayerName: playerName,
 		Insights:   richInsights,
@@ -256,9 +290,27 @@ func (s *Server) handleInsightsAPI(w http.ResponseWriter, r *http.Request) {
 			LostDuels:      lostDuels,
 			AvgTTDDiffMs:   avgTTD,
 			CountsByType:   counts,
+			Games:          games,
 		},
 	}
 
 	w.Header().Set("Content-Type", "application/json")
 	json.NewEncoder(w).Encode(response)
+}
+
+func displayMatchName(matchName string) string {
+	base := filepath.Base(matchName)
+	base = strings.TrimSuffix(base, ".dem")
+	base = strings.TrimSuffix(base, ".dem.bz2")
+	if base == "." || base == string(filepath.Separator) || base == "" {
+		return "Unknown match"
+	}
+	return base
+}
+
+func mapNameFromMeta(meta map[string]interface{}) string {
+	if value, ok := meta["map"].(string); ok && value != "" {
+		return value
+	}
+	return "Unknown map"
 }
