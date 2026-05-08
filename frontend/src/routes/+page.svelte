@@ -103,51 +103,50 @@
     <title>CS Insights{playerName ? ` - ${playerName}` : ''}</title>
 </svelte:head>
 
-<main class="container">
 {#if !playerName && !data && !loading}
-    <article>
-        <header>
-            <hgroup>
-                <h1>CS Insights</h1>
-                <p>Analyze your Counter-Strike 2 habits</p>
-            </hgroup>
-        </header>
-        <form on:submit={handleSubmit}>
-            <label for="player">
-                Enter Player Name
-                <input type="text" bind:value={playerName} oninput={handleInput} id="player" placeholder="e.g. s1mple" required>
-            </label>
-            <button type="submit" aria-busy={loading}>View Insights</button>
-        </form>
-    </article>
+    <section class="stack-lg hero">
+        <div class="card hero-card stack">
+            <div>
+                <h1 class="display">CS Insights</h1>
+                <p class="muted">Analyze your Counter-Strike 2 habits and turn match data into focused practice.</p>
+            </div>
+
+            <form class="search-form" onsubmit={handleSubmit}>
+                <label class="stack-sm" for="player">
+                    Enter player name
+                    <input type="text" bind:value={playerName} oninput={handleInput} id="player" placeholder="e.g. s1mple" required>
+                </label>
+                <button class="chip primary-chip" type="submit" aria-busy={loading}>View Insights</button>
+            </form>
+        </div>
+    </section>
 {:else}
-    <nav>
-        <ul>
-            <li><strong>Performance Dashboard</strong></li>
-        </ul>
-        <ul>
-            <li><button class="outline" on:click={() => { playerName = ''; data = null; window.history.pushState({}, '', '/'); }}>← Back to Search</button></li>
-        </ul>
-    </nav>
-    <p>Analysis for <mark>{playerName}</mark></p>
+    <section class="stack-lg">
+    <div class="row-between dashboard-head">
+        <div>
+            <h1 class="display">Performance Dashboard</h1>
+            <p class="muted">Analysis for <mark>{playerName}</mark></p>
+        </div>
+        <button class="chip" onclick={() => { playerName = ''; data = null; window.history.pushState({}, '', '/'); }}>Back to Search</button>
+    </div>
 
     {#if loading}
-        <article aria-busy="true"></article>
+        <div class="card empty-state" aria-busy="true">Loading insights...</div>
     {:else if error}
-        <article>
-            <header style="background-color: var(--pico-del-color); color: white;">Error loading data</header>
+        <div class="card stack-sm error-card">
+            <div class="card-header">Error loading data</div>
             <p>{error}</p>
-        </article>
+        </div>
     {:else if !data?.insights?.length}
-        <article style="text-align: center;">
+        <div class="empty-state">
             <p>No data found</p>
-            <small>Run the CLI tool to parse a demo for this player first.</small>
-        </article>
+            <span class="small">Run the CLI tool to parse a demo for this player first.</span>
+        </div>
     {:else}
-        <div class="grid">
+        <div class="grid-2">
             <!-- Advice Column -->
-            <article>
-                <header>Coach's Advice</header>
+            <div class="card stack-sm">
+                <div class="card-header">Coach's Advice</div>
                 {#if data.advice && data.advice.length > 0}
                     <ul>
                         {#each data.advice as item}
@@ -159,26 +158,24 @@
                 {:else}
                     <p>No major habits detected yet. Keep playing!</p>
                 {/if}
-            </article>
+            </div>
 
             <!-- Chart Column -->
-            <article>
-                <header>Habit Profile</header>
-                <div style="height: 250px; position: relative;">
+            <div class="card stack-sm">
+                <div class="card-header">Habit Profile</div>
+                <div class="chart-wrap">
                     <canvas bind:this={chartCanvas}></canvas>
                 </div>
-            </article>
+            </div>
         </div>
 
-        <h3>Raw Incident Log</h3>
+        <div class="section-heading">Raw Incident Log</div>
         {#each data.insights as insight}
-            <article>
-                <header>
-                    <div style="display: flex; justify-content: space-between;">
+            <div class="card stack-sm">
+                <div class="row-between incident-head">
                         <strong>{insight.Type}</strong>
-                        <small>Round {insight.Round} | Tick {insight.Tick}</small>
-                    </div>
-                </header>
+                        <span class="small muted mono">Round {insight.Round} | Tick {insight.Tick}</span>
+                </div>
                 <p>{insight.Description}</p>
                 
                 {#if insight.Type === "Gunfight" && insight.meta}
@@ -209,8 +206,8 @@
                         {/if}
                     </blockquote>
                 {/if}
-                <footer>
-                    <button class="outline" on:click={(e) => {
+                <div>
+                    <button class="chip" onclick={(e) => {
                                 navigator.clipboard.writeText(`demo_gototick ${insight.Tick}`);
                                 const btn = e.currentTarget;
                                 const originalText = btn.innerText;
@@ -220,9 +217,82 @@
                             title="Click to copy console command">
                         demo_gototick {insight.Tick}
                     </button>
-                </footer>
-            </article>
+                </div>
+            </div>
         {/each}
     {/if}
+    </section>
 {/if}
-</main>
+
+<style>
+    .hero {
+        min-height: min(38rem, calc(100vh - 12rem));
+        justify-content: center;
+    }
+
+    .hero-card {
+        max-width: 42rem;
+        padding: var(--space-6);
+        background: linear-gradient(135deg, var(--color-surface), color-mix(in srgb, var(--color-accent) 8%, var(--color-surface-2)));
+    }
+
+    .hero-card h1 {
+        margin-bottom: var(--space-2);
+    }
+
+    .search-form {
+        display: flex;
+        gap: var(--space-3);
+        align-items: end;
+        flex-wrap: wrap;
+    }
+
+    .search-form label {
+        flex: 1 1 16rem;
+    }
+
+    .search-form input {
+        max-width: none;
+    }
+
+    .primary-chip {
+        background: var(--color-accent);
+        color: var(--color-accent-contrast);
+        border-color: var(--color-accent);
+        height: 2.25rem;
+    }
+
+    .chart-wrap {
+        height: 250px;
+        position: relative;
+    }
+
+    .error-card {
+        border-color: color-mix(in srgb, var(--color-danger) 45%, var(--color-border));
+    }
+
+    .error-card .card-header {
+        color: var(--color-danger);
+    }
+
+    .incident-head {
+        align-items: flex-start;
+    }
+
+    @media (max-width: 639px) {
+        .dashboard-head,
+        .incident-head {
+            align-items: flex-start;
+            flex-direction: column;
+        }
+
+        .hero-card {
+            padding: var(--space-4);
+        }
+
+        .search-form button {
+            width: 100%;
+            justify-content: center;
+        }
+    }
+</style>

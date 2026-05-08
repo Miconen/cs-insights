@@ -45,8 +45,14 @@ func main() {
 		}
 	}
 
+	cfg, err := config.LoadConfig("config.json")
+	if err != nil {
+		log.Printf("Warning: Failed to load config.json, using defaults: %v", err)
+		cfg = config.DefaultConfig()
+	}
+
 	if *serve {
-		server := web.NewServer(database)
+		server := web.NewServer(database, cfg)
 		err := server.Start("0.0.0.0:8080")
 		if err != nil {
 			log.Fatalf("Web server failed: %v", err)
@@ -73,12 +79,6 @@ func main() {
 		demosToParse = fetched
 	} else if *steamID != "" && *cookie == "" {
 		log.Fatalf("You must provide --cookie=\"your_steamLoginSecure_cookie\" to fetch matches.")
-	}
-
-	cfg, err := config.LoadConfig("config.json")
-	if err != nil {
-		log.Printf("Warning: Failed to load config.json, using defaults: %v", err)
-		cfg = config.DefaultConfig()
 	}
 
 	for _, dp := range demosToParse {

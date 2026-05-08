@@ -4,6 +4,9 @@
 	import '../app.css';
 	import { onNavigate } from '$app/navigation';
 	import { navigating } from '$app/stores';
+	import Header from '$lib/components/Header.svelte';
+	import Footer from '$lib/components/Footer.svelte';
+	import TopProgress from '$lib/components/TopProgress.svelte';
 
 	interface Props {
 		children?: import('svelte').Snippet;
@@ -29,10 +32,15 @@
 	});
 </script>
 
+<TopProgress />
+<Header />
+
 <!-- Dim content while navigating -->
 <main class="container" class:navigating={!!$navigating}>
 	{@render children?.()}
 </main>
+
+<Footer />
 
 <style>
 	main {

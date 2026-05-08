@@ -1,7 +1,11 @@
 package web
 
 import (
+	"cs-insights/internal/analyzers"
+	"cs-insights/internal/config"
 	"cs-insights/internal/db"
+	"cs-insights/internal/fetcher"
+	"cs-insights/internal/parser"
 	"encoding/json"
 	"log"
 	"net/http"
@@ -9,11 +13,12 @@ import (
 )
 
 type Server struct {
-	db *db.Database
+	db  *db.Database
+	cfg *config.Config
 }
 
-func NewServer(database *db.Database) *Server {
-	return &Server{db: database}
+func NewServer(database *db.Database, cfg *config.Config) *Server {
+	return &Server{db: database, cfg: cfg}
 }
 
 func (s *Server) Start(addr string) error {
@@ -21,7 +26,7 @@ func (s *Server) Start(addr string) error {
 	corsMiddleware := func(next http.HandlerFunc) http.HandlerFunc {
 		return func(w http.ResponseWriter, r *http.Request) {
 			w.Header().Set("Access-Control-Allow-Origin", "*")
-			w.Header().Set("Access-Control-Allow-Methods", "GET, OPTIONS")
+			w.Header().Set("Access-Control-Allow-Methods", "GET, POST, OPTIONS")
 			w.Header().Set("Access-Control-Allow-Headers", "Content-Type")
 
 			if r.Method == "OPTIONS" {
@@ -34,9 +39,96 @@ func (s *Server) Start(addr string) error {
 	}
 
 	http.HandleFunc("/api/insights", corsMiddleware(s.handleInsightsAPI))
+	http.HandleFunc("/api/fetch/list", corsMiddleware(s.handleFetchListAPI))
+	http.HandleFunc("/api/fetch/process", corsMiddleware(s.handleFetchProcessAPI))
 
 	log.Printf("Starting API server on http://%s", addr)
 	return http.ListenAndServe(addr, nil)
+}
+
+func (s *Server) handleFetchListAPI(w http.ResponseWriter, r *http.Request) {
+	steamID := r.URL.Query().Get("steam_id")
+	cookie := r.URL.Query().Get("cookie")
+
+	if steamID == "" || cookie == "" {
+		http.Error(w, "Missing steam_id or cookie", http.StatusBadRequest)
+		return
+	}
+
+	matches, err := fetcher.GetMatchHistory(steamID, cookie, "demos")
+	if err != nil {
+		http.Error(w, err.Error(), http.StatusInternalServerError)
+		return
+	}
+
+	w.Header().Set("Content-Type", "application/json")
+	json.NewEncoder(w).Encode(matches)
+}
+
+func (s *Server) handleFetchProcessAPI(w http.ResponseWriter, r *http.Request) {
+	if r.Method != "POST" {
+		http.Error(w, "Method not allowed", http.StatusMethodNotAllowed)
+		return
+	}
+
+	var req struct {
+		Link       string `json:"link"`
+		PlayerName string `json:"player_name"`
+	}
+
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		http.Error(w, err.Error(), http.StatusBadRequest)
+		return
+	}
+
+	if req.Link == "" || req.PlayerName == "" {
+		http.Error(w, "Missing link or player_name", http.StatusBadRequest)
+		return
+	}
+
+	// 1. Download & Decompress
+	demPath, err := fetcher.DownloadAndDecompress(req.Link, "demos")
+	if err != nil {
+		http.Error(w, err.Error(), http.StatusInternalServerError)
+		return
+	}
+
+	// 2. Parse Demo
+	engine := parser.NewEngine(demPath, req.PlayerName)
+	engine.AddAnalyzer(analyzers.NewPrematureFireAnalyzer(req.PlayerName, s.cfg.Analyzers.PrematureFire))
+	engine.AddAnalyzer(analyzers.NewSpasmAnalyzer(req.PlayerName, s.cfg.Analyzers.Spasm))
+	engine.AddAnalyzer(analyzers.NewSprayAnalyzer(req.PlayerName, s.cfg.Analyzers.Spray))
+	engine.AddAnalyzer(analyzers.NewCounterStrafeAnalyzer(req.PlayerName, s.cfg.Analyzers.CounterStrafe))
+	engine.AddAnalyzer(analyzers.NewGunfightAnalyzer(req.PlayerName))
+
+	insights, err := engine.Parse()
+	if err != nil {
+		http.Error(w, "Error parsing demo: "+err.Error(), http.StatusInternalServerError)
+		return
+	}
+
+	// 3. Save Insights
+	for _, i := range insights {
+		err := s.db.SaveInsight(db.Insight{
+			PlayerName:  req.PlayerName,
+			MatchName:   demPath,
+			Round:       i.Round,
+			Tick:        i.Tick,
+			Type:        i.Type,
+			Severity:    i.Severity,
+			Description: i.Description,
+			Metadata:    i.Metadata,
+		})
+		if err != nil {
+			log.Printf("Failed to save insight: %v", err)
+		}
+	}
+
+	w.Header().Set("Content-Type", "application/json")
+	json.NewEncoder(w).Encode(map[string]interface{}{
+		"status":   "success",
+		"insights": len(insights),
+	})
 }
 
 type APIResponse struct {
