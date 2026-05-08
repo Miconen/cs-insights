@@ -1,27 +1,16 @@
 <script lang="ts">
-    import { goto } from '$app/navigation';
-
     let steamId = '';
     let cookie = '';
     let playerName = '';
-    let apiKey = '';
-    let authCode = '';
-    let knownCode = '';
     
     let loadingMatches = false;
     let matches: any[] = [];
     let error = '';
+    let processingLink = '';
+    let processingStatuses: Record<string, string> = {};
 
-    async function fetchShareCodes(e: Event) {
-        e.preventDefault();
-        sessionStorage.setItem('cs-insights:fetch-request', JSON.stringify({
-            steamId,
-            playerName,
-            apiKey,
-            authCode,
-            knownCode,
-        }));
-        await goto('/fetch/matches');
+    function setProcessingStatus(link: string, status: string) {
+        processingStatuses = { ...processingStatuses, [link]: status };
     }
 
     async function fetchMatches(e: Event) {
@@ -38,6 +27,41 @@
             loadingMatches = false;
         }
     }
+
+    async function processMatch(match: any) {
+        if (!playerName) {
+            error = 'Enter your exact in-game name before downloading a match.';
+            return;
+        }
+
+        processingLink = match.link;
+        setProcessingStatus(match.link, 'Requesting download...');
+
+        const timers = [
+            setTimeout(() => setProcessingStatus(match.link, 'Downloading demo...'), 400),
+            setTimeout(() => setProcessingStatus(match.link, 'Decompressing demo...'), 2500),
+            setTimeout(() => setProcessingStatus(match.link, 'Processing demo...'), 4500),
+            setTimeout(() => setProcessingStatus(match.link, 'Saving insights...'), 10000)
+        ];
+
+        try {
+            const res = await fetch('http://localhost:8080/api/fetch/process', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ link: match.link, player_name: playerName })
+            });
+            if (!res.ok) throw new Error(await res.text());
+            const result = await res.json();
+
+            matches = matches.map((candidate) => candidate.link === match.link ? { ...candidate, processed: true, downloaded: true } : candidate);
+            setProcessingStatus(match.link, `Done. Saved ${result.insights ?? 0} insights.`);
+        } catch (e: any) {
+            setProcessingStatus(match.link, `Failed: ${e.message}`);
+        } finally {
+            timers.forEach(clearTimeout);
+            processingLink = '';
+        }
+    }
 </script>
 
 <svelte:head>
@@ -48,59 +72,17 @@
     <div class="row-between page-head">
         <div>
             <h1 class="display">Fetch Recent Matches</h1>
-            <p class="muted">List recent Premier matches and download demos when a replay URL is available.</p>
+            <p class="muted">List recent Premier matches and download demos from your Steam match history.</p>
         </div>
     </div>
 
     <div class="fetch-layout">
-        <article class="card stack form-panel recommended-panel">
-            <div class="form-header">
-                <span class="eyebrow">Recommended</span>
-                <h2>Steam Match History Token</h2>
-                <p class="muted small">
-                    Uses Valve's official match-history API. Safer than using a browser-session cookie, but this no-login flow only returns share-code metadata, not replay download URLs.
-                </p>
-            </div>
-
-            <form class="stack" onsubmit={fetchShareCodes}>
-                <label class="field stack-sm" for="steamApiKey">
-                    <span class="field-label">Steam Web API key <a class="field-help" href="https://steamcommunity.com/dev/apikey" target="_blank" rel="noreferrer">Get key</a></span>
-                    <input type="password" id="steamApiKey" bind:value={apiKey} placeholder="Steam Web API key">
-                </label>
-
-                <label class="field stack-sm" for="playerNameToken">
-                    <span class="field-label">Exact in-game name</span>
-                    <input type="text" id="playerNameToken" bind:value={playerName} placeholder="e.g. s1mple" required>
-                </label>
-
-                <label class="field stack-sm" for="steamIdToken">
-                    <span class="field-label">SteamID64 <a class="field-help" href="https://steamid.io/" target="_blank" rel="noreferrer">Find ID</a></span>
-                    <input type="text" id="steamIdToken" bind:value={steamId} placeholder="7656119..." required>
-                </label>
-
-                <label class="field stack-sm" for="authCode">
-                    <span class="field-label">Match history auth code <a class="field-help" href="https://help.steampowered.com/en/wizard/HelpWithGameIssue/?appid=730&issueid=128" target="_blank" rel="noreferrer">Find code</a></span>
-                    <input type="password" id="authCode" bind:value={authCode} placeholder="steamidkey / auth code" required>
-                </label>
-
-                <label class="field stack-sm" for="knownCode">
-                    <span class="field-label">Known share code <a class="field-help" href="https://help.steampowered.com/en/wizard/HelpWithGameIssue/?appid=730&issueid=128" target="_blank" rel="noreferrer">Find share code</a></span>
-                    <input type="text" id="knownCode" bind:value={knownCode} placeholder="CSGO-xxxxx-xxxxx-xxxxx-xxxxx-xxxxx" required>
-                </label>
-
-                <div class="token-actions">
-                    <button class="chip primary-chip" type="submit">Fetch Share Codes</button>
-                </div>
-            </form>
-
-        </article>
-
         <article class="card stack form-panel legacy-panel">
             <div class="form-header">
-                <span class="eyebrow warning">Legacy</span>
-                <h2>GCPD Cookie Scrape</h2>
+                <span class="eyebrow">Supported</span>
+                <h2>Steam GCPD Replay Links</h2>
                 <p class="muted small">
-                    Works for direct replay downloads, but requires your <code>steamLoginSecure</code> browser cookie. Treat that cookie like a password.
+                    This fetches the direct replay download links from your CS match history page. It requires <code>steamLoginSecure</code>, so treat that cookie like a password.
                 </p>
             </div>
 
@@ -160,7 +142,17 @@
                                         {/if}
                                     </td>
                                     <td data-label="Action">
-                                        <span class="muted small">Direct replay URL available through this legacy flow.</span>
+                                        <button
+                                            class="chip"
+                                            disabled={processingLink === match.link || match.processed}
+                                            aria-busy={processingLink === match.link}
+                                            onclick={() => processMatch(match)}
+                                        >
+                                            {match.processed ? 'Analyzed' : (match.downloaded ? 'Analyze Again' : 'Download & Analyze')}
+                                        </button>
+                                        {#if processingStatuses[match.link]}
+                                            <div class="small muted process-status">{processingStatuses[match.link]}</div>
+                                        {/if}
                                     </td>
                                 </tr>
                             {/each}
@@ -177,22 +169,15 @@
     }
 
     .fetch-layout {
-        display: grid;
-        grid-template-columns: minmax(0, 1.15fr) minmax(20rem, 0.85fr);
-        gap: var(--space-4);
-        align-items: start;
+        max-width: 48rem;
     }
 
     .form-panel {
         padding: var(--space-5);
     }
 
-    .recommended-panel {
-        background: linear-gradient(135deg, var(--color-surface), color-mix(in srgb, var(--color-accent) 7%, var(--color-surface-2)));
-    }
-
     .legacy-panel {
-        background: color-mix(in srgb, var(--color-warning) 5%, var(--color-surface));
+        background: linear-gradient(135deg, var(--color-surface), color-mix(in srgb, var(--color-accent) 7%, var(--color-surface-2)));
     }
 
     .form-header h2 {
@@ -214,11 +199,6 @@
         text-transform: uppercase;
     }
 
-    .eyebrow.warning {
-        border-color: color-mix(in srgb, var(--color-warning) 45%, var(--color-border));
-        color: var(--color-warning);
-    }
-
     .field {
         display: grid;
         gap: var(--space-2);
@@ -237,19 +217,6 @@
         font-weight: 600;
     }
 
-    .field-help {
-        color: var(--color-text-muted);
-        font-size: 0.75rem;
-        font-weight: 500;
-        text-decoration: none;
-    }
-
-    .field-help:hover {
-        color: var(--color-accent);
-        text-decoration: underline;
-    }
-
-    .token-actions,
     .legacy-actions {
         display: flex;
         align-items: end;
@@ -278,11 +245,11 @@
         color: var(--color-warning);
     }
 
-    @media (max-width: 639px) {
-        .fetch-layout {
-            grid-template-columns: 1fr;
-        }
+    .process-status {
+        margin-top: var(--space-2);
+    }
 
+    @media (max-width: 639px) {
         .page-head {
             align-items: flex-start;
             flex-direction: column;
@@ -292,7 +259,6 @@
             padding: var(--space-4);
         }
 
-        .token-actions,
         .legacy-actions {
             align-items: flex-start;
             flex-direction: column;

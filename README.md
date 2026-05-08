@@ -49,7 +49,7 @@ Or from the repository root:
 make
 ```
 
-If you want the Steam match-history token flow, enter your Steam Web API key in the Fetch Demos page. You can create a Steam Web API key at `https://steamcommunity.com/dev/apikey`.
+To fetch demos through the web UI, open the Fetch Demos page and use the Steam GCPD replay-link flow. It requires your `steamLoginSecure` cookie because that is the no-login method currently available for direct `.dem.bz2` replay URLs.
 
 Then start the Svelte frontend:
 

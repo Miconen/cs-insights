@@ -2,180 +2,21 @@ package fetcher
 
 import (
 	"compress/bzip2"
-	"encoding/json"
 	"fmt"
 	"io"
 	"log"
-	"math/big"
 	"net/http"
-	"net/url"
 	"os"
 	"path/filepath"
 	"regexp"
 	"strings"
 )
 
-const shareCodeDictionary = "ABCDEFGHJKLMNOPQRSTUVWXYZabcdefhijkmnopqrstuvwxyz23456789"
-
 type MatchInfo struct {
 	Link       string `json:"link"`
 	FileName   string `json:"file_name"`
 	Downloaded bool   `json:"downloaded"`
 	Processed  bool   `json:"processed"` // Harder to check without DB, but let's leave it for API to fill
-}
-
-type ShareCodeInfo struct {
-	ShareCode  string `json:"share_code"`
-	MatchID    string `json:"match_id"`
-	OutcomeID  string `json:"outcome_id"`
-	TVPort     uint16 `json:"tv_port"`
-	DemoURL    string `json:"demo_url"`
-	FileName   string `json:"file_name"`
-	Details    string `json:"details"`
-	Downloaded bool   `json:"downloaded"`
-	Processed  bool   `json:"processed"`
-}
-
-type MatchShareCode struct {
-	MatchID   *big.Int
-	OutcomeID *big.Int
-	TVPort    uint16
-}
-
-type nextMatchSharingCodeResponse struct {
-	Result struct {
-		NextCode string `json:"nextcode"`
-	} `json:"result"`
-}
-
-// GetNextMatchShareCodes uses Valve's official, narrow-scope match-history API.
-// It requires a Steam Web API key, SteamID64, the user's CS match-history auth code
-// (called steamidkey by the endpoint), and a known match share code to page from.
-func GetNextMatchShareCodes(apiKey, steamID64, authCode, knownCode string, limit int, outputDir string) ([]ShareCodeInfo, error) {
-	if limit <= 0 {
-		return nil, fmt.Errorf("limit must be greater than 0")
-	}
-
-	codes := make([]ShareCodeInfo, 0, limit)
-	currentKnownCode := knownCode
-	client := &http.Client{}
-
-	for len(codes) < limit {
-		values := url.Values{}
-		values.Set("key", apiKey)
-		values.Set("steamid", steamID64)
-		values.Set("steamidkey", authCode)
-		values.Set("knowncode", currentKnownCode)
-
-		endpoint := "https://api.steampowered.com/ICSGOPlayers_730/GetNextMatchSharingCode/v1/?" + values.Encode()
-		req, err := http.NewRequest("GET", endpoint, nil)
-		if err != nil {
-			return nil, fmt.Errorf("failed to create request: %v", err)
-		}
-
-		resp, err := client.Do(req)
-		if err != nil {
-			return nil, fmt.Errorf("failed to fetch next sharing code: %v", err)
-		}
-
-		body, readErr := io.ReadAll(resp.Body)
-		resp.Body.Close()
-		if readErr != nil {
-			return nil, fmt.Errorf("failed to read Steam API response: %v", readErr)
-		}
-
-		if resp.StatusCode != 200 {
-			if resp.StatusCode == http.StatusTooManyRequests {
-				return nil, fmt.Errorf("Steam API returned 429 (rate limited). Wait before requesting more match share codes")
-			}
-			return nil, fmt.Errorf("Steam API returned %d: %s", resp.StatusCode, strings.TrimSpace(string(body)))
-		}
-
-		var parsed nextMatchSharingCodeResponse
-		if err := json.Unmarshal(body, &parsed); err != nil {
-			return nil, fmt.Errorf("failed to parse Steam API response: %v", err)
-		}
-
-		nextCode := strings.TrimSpace(parsed.Result.NextCode)
-		if nextCode == "" || nextCode == "n/a" || nextCode == currentKnownCode {
-			break
-		}
-
-		info, err := BuildShareCodeInfo(nextCode, outputDir)
-		if err != nil {
-			return nil, fmt.Errorf("failed to decode share code %s: %v", nextCode, err)
-		}
-
-		codes = append(codes, info)
-		currentKnownCode = nextCode
-	}
-
-	return codes, nil
-}
-
-func BuildShareCodeInfo(shareCode string, outputDir string) (ShareCodeInfo, error) {
-	decoded, err := DecodeMatchShareCode(shareCode)
-	if err != nil {
-		return ShareCodeInfo{}, err
-	}
-
-	fileName := fmt.Sprintf("match_%s.dem", decoded.MatchID.String())
-	demPath := filepath.Join(outputDir, fileName)
-	_, statErr := os.Stat(demPath)
-
-	return ShareCodeInfo{
-		ShareCode:  shareCode,
-		MatchID:    decoded.MatchID.String(),
-		OutcomeID:  decoded.OutcomeID.String(),
-		TVPort:     decoded.TVPort,
-		FileName:   fileName,
-		Details:    "Steam Web API only returns share codes. Map, date, score and replay URL require Steam Game Coordinator match metadata, so this card is informational until GC support is added.",
-		Downloaded: statErr == nil,
-	}, nil
-}
-
-func DecodeMatchShareCode(shareCode string) (MatchShareCode, error) {
-	cleaned := strings.ReplaceAll(strings.ReplaceAll(shareCode, "CSGO", ""), "-", "")
-	if len(cleaned) != 25 {
-		return MatchShareCode{}, fmt.Errorf("invalid share code length")
-	}
-
-	total := big.NewInt(0)
-	base := big.NewInt(int64(len(shareCodeDictionary)))
-	for i := len(cleaned) - 1; i >= 0; i-- {
-		idx := strings.IndexByte(shareCodeDictionary, cleaned[i])
-		if idx < 0 {
-			return MatchShareCode{}, fmt.Errorf("invalid share code character %q", cleaned[i])
-		}
-		total.Mul(total, base)
-		total.Add(total, big.NewInt(int64(idx)))
-	}
-
-	bytes := total.Bytes()
-	if len(bytes) > 18 {
-		return MatchShareCode{}, fmt.Errorf("decoded share code is too large")
-	}
-
-	padded := make([]byte, 18)
-	copy(padded[18-len(bytes):], bytes)
-
-	matchID := littleEndianBigInt(padded[0:8])
-	outcomeID := littleEndianBigInt(padded[8:16])
-	tvPort := uint16(padded[16]) | uint16(padded[17])<<8
-
-	return MatchShareCode{
-		MatchID:   matchID,
-		OutcomeID: outcomeID,
-		TVPort:    tvPort,
-	}, nil
-}
-
-func littleEndianBigInt(bytes []byte) *big.Int {
-	reversed := make([]byte, len(bytes))
-	for i := range bytes {
-		reversed[len(bytes)-1-i] = bytes[i]
-	}
-	return new(big.Int).SetBytes(reversed)
 }
 
 // GetMatchHistory just returns the links found on the page

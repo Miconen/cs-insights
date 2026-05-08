@@ -10,7 +10,6 @@ import (
 	"fmt"
 	"log"
 	"net/http"
-	"os"
 	"path/filepath"
 	"sort"
 	"strings"
@@ -44,7 +43,6 @@ func (s *Server) Start(addr string) error {
 
 	http.HandleFunc("/api/insights", corsMiddleware(s.handleInsightsAPI))
 	http.HandleFunc("/api/fetch/list", corsMiddleware(s.handleFetchListAPI))
-	http.HandleFunc("/api/fetch/sharecodes", corsMiddleware(s.handleFetchShareCodesAPI))
 	http.HandleFunc("/api/fetch/process", corsMiddleware(s.handleFetchProcessAPI))
 
 	log.Printf("Starting API server on http://%s", addr)
@@ -70,46 +68,6 @@ func (s *Server) handleFetchListAPI(w http.ResponseWriter, r *http.Request) {
 	json.NewEncoder(w).Encode(matches)
 }
 
-func (s *Server) handleFetchShareCodesAPI(w http.ResponseWriter, r *http.Request) {
-	apiKey := strings.TrimSpace(r.URL.Query().Get("api_key"))
-	if apiKey == "" {
-		apiKey = strings.TrimSpace(os.Getenv("STEAM_WEB_API_KEY"))
-	}
-	steamID := r.URL.Query().Get("steam_id")
-	authCode := r.URL.Query().Get("auth_code")
-	knownCode := r.URL.Query().Get("known_code")
-	limit := 10
-
-	if rawLimit := r.URL.Query().Get("limit"); rawLimit != "" {
-		if _, err := fmt.Sscanf(rawLimit, "%d", &limit); err != nil || limit < 1 {
-			http.Error(w, "Invalid limit", http.StatusBadRequest)
-			return
-		}
-	}
-
-	if apiKey == "" {
-		http.Error(w, "Missing api_key. Provide a Steam Web API key in the request or set STEAM_WEB_API_KEY on the backend.", http.StatusBadRequest)
-		return
-	}
-
-	if steamID == "" || authCode == "" || knownCode == "" {
-		http.Error(w, "Missing steam_id, auth_code, or known_code", http.StatusBadRequest)
-		return
-	}
-
-	codes, err := fetcher.GetNextMatchShareCodes(apiKey, steamID, authCode, knownCode, limit, "demos")
-	if err != nil {
-		http.Error(w, err.Error(), http.StatusInternalServerError)
-		return
-	}
-
-	w.Header().Set("Content-Type", "application/json")
-	json.NewEncoder(w).Encode(map[string]interface{}{
-		"share_codes": codes,
-		"note":        "Share codes are fetched via Valve's official match-history token API. This no-login flow does not expose replay download URLs; use the legacy GCPD method for direct replay downloads for now.",
-	})
-}
-
 func (s *Server) handleFetchProcessAPI(w http.ResponseWriter, r *http.Request) {
 	if r.Method != "POST" {
 		http.Error(w, "Method not allowed", http.StatusMethodNotAllowed)
@@ -118,7 +76,6 @@ func (s *Server) handleFetchProcessAPI(w http.ResponseWriter, r *http.Request) {
 
 	var req struct {
 		Link       string `json:"link"`
-		ShareCode  string `json:"share_code"`
 		PlayerName string `json:"player_name"`
 	}
 
@@ -127,22 +84,8 @@ func (s *Server) handleFetchProcessAPI(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	if req.Link == "" && req.ShareCode != "" {
-		info, err := fetcher.BuildShareCodeInfo(req.ShareCode, "demos")
-		if err != nil {
-			http.Error(w, "Invalid share code: "+err.Error(), http.StatusBadRequest)
-			return
-		}
-		req.Link = info.DemoURL
-	}
-
-	if req.Link == "" && req.ShareCode != "" {
-		http.Error(w, "Share code was decoded, but the Steam Web API does not provide the replay URL. Direct download from share codes requires Steam Game Coordinator match metadata; use the legacy GCPD flow for now.", http.StatusNotImplemented)
-		return
-	}
-
 	if req.Link == "" || req.PlayerName == "" {
-		http.Error(w, "Missing link/share_code or player_name", http.StatusBadRequest)
+		http.Error(w, "Missing link or player_name", http.StatusBadRequest)
 		return
 	}
 
