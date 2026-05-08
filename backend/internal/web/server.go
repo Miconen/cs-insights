@@ -10,6 +10,7 @@ import (
 	"fmt"
 	"log"
 	"net/http"
+	"os"
 	"path/filepath"
 	"sort"
 	"strings"
@@ -70,7 +71,7 @@ func (s *Server) handleFetchListAPI(w http.ResponseWriter, r *http.Request) {
 }
 
 func (s *Server) handleFetchShareCodesAPI(w http.ResponseWriter, r *http.Request) {
-	apiKey := r.URL.Query().Get("api_key")
+	apiKey := strings.TrimSpace(os.Getenv("STEAM_WEB_API_KEY"))
 	steamID := r.URL.Query().Get("steam_id")
 	authCode := r.URL.Query().Get("auth_code")
 	knownCode := r.URL.Query().Get("known_code")
@@ -83,8 +84,13 @@ func (s *Server) handleFetchShareCodesAPI(w http.ResponseWriter, r *http.Request
 		}
 	}
 
-	if apiKey == "" || steamID == "" || authCode == "" || knownCode == "" {
-		http.Error(w, "Missing api_key, steam_id, auth_code, or known_code", http.StatusBadRequest)
+	if apiKey == "" {
+		http.Error(w, "Missing backend STEAM_WEB_API_KEY environment variable", http.StatusInternalServerError)
+		return
+	}
+
+	if steamID == "" || authCode == "" || knownCode == "" {
+		http.Error(w, "Missing steam_id, auth_code, or known_code", http.StatusBadRequest)
 		return
 	}
 

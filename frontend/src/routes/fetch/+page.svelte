@@ -2,7 +2,6 @@
     let steamId = '';
     let cookie = '';
     let playerName = '';
-    let apiKey = '';
     let authCode = '';
     let knownCode = '';
     let limit = 10;
@@ -34,7 +33,6 @@
         error = '';
         try {
             const params = new URLSearchParams({
-                api_key: apiKey,
                 steam_id: steamId,
                 auth_code: authCode,
                 known_code: knownCode,
@@ -96,16 +94,13 @@
             <p class="muted small">
                 This uses Valve's official match-history API with your Steam Web API key and CS match-history auth code.
                 It is safer than pasting <code>steamLoginSecure</code>, because it does not grant browser-session access.
+                The Steam Web API key is read from the backend <code>STEAM_WEB_API_KEY</code> environment variable, so you do not need to paste it into the browser.
                 For now this lists share codes only; direct demo download from share codes is the next step.
             </p>
         </div>
 
         <form class="stack" onsubmit={fetchShareCodes}>
             <div class="grid-2">
-                <label class="stack-sm" for="steamApiKey">
-                    Steam Web API key
-                    <input type="password" id="steamApiKey" bind:value={apiKey} placeholder="Steam Web API key">
-                </label>
                 <label class="stack-sm" for="steamIdToken">
                     SteamID64
                     <input type="text" id="steamIdToken" bind:value={steamId} placeholder="7656119...">
