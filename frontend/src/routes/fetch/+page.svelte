@@ -13,6 +13,13 @@
         processingStatuses = { ...processingStatuses, [link]: status };
     }
 
+    function actionLabel(match: any) {
+        if (processingStatuses[match.link]) {
+            return processingStatuses[match.link];
+        }
+        return match.processed ? 'Analyzed' : (match.downloaded ? 'Analyze Again' : 'Download & Analyze');
+    }
+
     async function fetchMatches(e: Event) {
         e.preventDefault();
         error = '';
@@ -148,11 +155,14 @@
                                             aria-busy={processingLink === match.link}
                                             onclick={() => processMatch(match)}
                                         >
-                                            {match.processed ? 'Analyzed' : (match.downloaded ? 'Analyze Again' : 'Download & Analyze')}
+                                            {#if processingStatuses[match.link] && processingLink === match.link}
+                                                {processingStatuses[match.link]}
+                                            {:else if processingStatuses[match.link] && match.processed}
+                                                {processingStatuses[match.link]}
+                                            {:else}
+                                                {match.processed ? 'Analyzed' : (match.downloaded ? 'Analyze Again' : 'Download & Analyze')}
+                                            {/if}
                                         </button>
-                                        {#if processingStatuses[match.link]}
-                                            <div class="small muted process-status">{processingStatuses[match.link]}</div>
-                                        {/if}
                                     </td>
                                 </tr>
                             {/each}
@@ -243,10 +253,6 @@
 
     .status-warning {
         color: var(--color-warning);
-    }
-
-    .process-status {
-        margin-top: var(--space-2);
     }
 
     @media (max-width: 639px) {
