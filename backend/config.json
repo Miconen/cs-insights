@@ -15,7 +15,8 @@
       "max_vertical_distance": 10.0
     },
     "spray": {
-      "long_range_threshold": 650.0
+      "medium_range_threshold": 600.0,
+      "long_range_threshold": 1000.0
     }
   }
 }

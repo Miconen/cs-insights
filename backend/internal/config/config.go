@@ -36,7 +36,8 @@ type CrosshairHeightConfig struct {
 }
 
 type SprayConfig struct {
-	LongRangeThreshold float64 `json:"long_range_threshold"` // 1200 hammer units is typical "long range"
+	MediumRangeThreshold float64 `json:"medium_range_threshold"` // 600+ units = medium range
+	LongRangeThreshold   float64 `json:"long_range_threshold"`   // 1000+ units = long range
 }
 
 func LoadConfig(path string) (*Config, error) {
@@ -77,7 +78,8 @@ func DefaultConfig() *Config {
 				MaxVerticalDistance: 10.0,
 			},
 			Spray: SprayConfig{
-				LongRangeThreshold: 1200.0,
+				MediumRangeThreshold: 600.0,
+				LongRangeThreshold:   1000.0,
 			},
 		},
 	}

@@ -129,12 +129,22 @@ func (a *SprayAnalyzer) evaluateSpray(state *parser.GameState) {
 			}
 		}
 
-		if efficiency < 0.2 { // If less than 20% hit rate
-			desc := fmt.Sprintf("Inefficient spray: Fired %d bullets, hit %d (%.0f%%)", a.shotsFired, a.shotsHit, efficiency*100)
-			severity := "Medium"
-			if distance > a.cfg.LongRangeThreshold {
-				desc += fmt.Sprintf(" - Distance was %.0f units (Low percentage long-range spray)", distance)
+		rangeLabel := "close range"
+		switch {
+		case distance >= a.cfg.LongRangeThreshold:
+			rangeLabel = "long range"
+		case distance >= a.cfg.MediumRangeThreshold:
+			rangeLabel = "medium range"
+		}
+
+		if efficiency < 0.2 {
+			desc := fmt.Sprintf("Inefficient spray at %s (%.0f units): Fired %d bullets, hit %d (%.0f%%)",
+				rangeLabel, distance, a.shotsFired, a.shotsHit, efficiency*100)
+			severity := "Low"
+			if distance >= a.cfg.LongRangeThreshold {
 				severity = "High"
+			} else if distance >= a.cfg.MediumRangeThreshold {
+				severity = "Medium"
 			}
 
 			a.insights = append(a.insights, parser.InsightData{
@@ -144,14 +154,23 @@ func (a *SprayAnalyzer) evaluateSpray(state *parser.GameState) {
 				Severity:    severity,
 				Description: desc,
 			})
-		} else if distance > a.cfg.LongRangeThreshold && a.shotsFired > 10 {
-			// Even if they hit, spraying 10+ bullets at long range is a bad habit
+		} else if distance >= a.cfg.LongRangeThreshold && a.shotsFired > 10 {
+			// Hitting at long range but still spraying a lot is a bad habit
 			a.insights = append(a.insights, parser.InsightData{
 				Round:       state.CurrentRound,
 				Tick:        a.sprayStartTick,
 				Type:        "SprayConfidence",
 				Severity:    "Medium",
 				Description: fmt.Sprintf("Overconfident long-range spray: Fired %d bullets at a target %.0f units away.", a.shotsFired, distance),
+			})
+		} else if distance >= a.cfg.MediumRangeThreshold && a.shotsFired > 15 {
+			// Spraying a very high number of bullets at medium range
+			a.insights = append(a.insights, parser.InsightData{
+				Round:       state.CurrentRound,
+				Tick:        a.sprayStartTick,
+				Type:        "SprayConfidence",
+				Severity:    "Low",
+				Description: fmt.Sprintf("Extended medium-range spray: Fired %d bullets at a target %.0f units away. Consider switching to burst fire.", a.shotsFired, distance),
 			})
 		}
 	}
