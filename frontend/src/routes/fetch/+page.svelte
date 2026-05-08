@@ -141,7 +141,7 @@
                     <span class="small muted"><a href="https://help.steampowered.com/en/wizard/HelpWithGameIssue/?appid=730&issueid=128" target="_blank" rel="noreferrer">Find a match-history share code</a></span>
                 </label>
 
-                <div class="action-row">
+                <div class="token-actions">
                     <label class="field compact-field stack-sm" for="limit">
                         <span>Games</span>
                         <input type="number" id="limit" bind:value={limit} min="1" max="100">
@@ -189,7 +189,7 @@
                     <span class="small muted">Required to access your private match history.</span>
                 </label>
 
-                <div class="action-row">
+                <div class="legacy-actions">
                     <button class="chip primary-chip" type="submit" aria-busy={loadingMatches}>Load Match History</button>
                 </div>
             </form>
@@ -255,14 +255,18 @@
     }
 
     .fetch-layout {
-        display: grid;
-        grid-template-columns: minmax(0, 1.15fr) minmax(20rem, 0.85fr);
+        display: flex;
+        flex-direction: column;
         gap: var(--space-4);
-        align-items: start;
+        max-width: 58rem;
     }
 
     .form-panel {
         padding: var(--space-5);
+    }
+
+    .form-panel form {
+        max-width: 42rem;
     }
 
     .recommended-panel {
@@ -298,7 +302,13 @@
     }
 
     .field {
+        display: grid;
+        gap: var(--space-2);
         margin-bottom: 0;
+    }
+
+    .field input {
+        width: 100%;
     }
 
     .field > span:first-child {
@@ -306,11 +316,12 @@
     }
 
     .compact-field {
-        width: 8rem;
+        width: 9rem;
         flex: 0 0 auto;
     }
 
-    .action-row {
+    .token-actions,
+    .legacy-actions {
         display: flex;
         align-items: end;
         gap: var(--space-3);
@@ -348,10 +359,6 @@
     }
 
     @media (max-width: 639px) {
-        .fetch-layout {
-            grid-template-columns: 1fr;
-        }
-
         .page-head {
             align-items: flex-start;
             flex-direction: column;
@@ -361,9 +368,14 @@
             padding: var(--space-4);
         }
 
-        .action-row {
+        .token-actions,
+        .legacy-actions {
             align-items: flex-start;
             flex-direction: column;
+        }
+
+        .compact-field {
+            width: 100%;
         }
     }
 </style>
