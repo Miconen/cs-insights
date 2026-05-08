@@ -5,8 +5,8 @@ import (
 	"math"
 
 	"cs-insights/internal/parser"
-	"github.com/markus-wa/demoinfocs-golang/v4/pkg/demoinfocs/common"
-	events "github.com/markus-wa/demoinfocs-golang/v4/pkg/demoinfocs/events"
+	"github.com/markus-wa/demoinfocs-golang/v5/pkg/demoinfocs/common"
+	events "github.com/markus-wa/demoinfocs-golang/v5/pkg/demoinfocs/events"
 	"github.com/golang/geo/r3"
 )
 
@@ -63,7 +63,8 @@ func (a *PrematureFireAnalyzer) OnEvent(event interface{}, state *parser.GameSta
 			}
 
 			// Calculate angular distance
-			pitch, yaw := calculateAngles(e.Shooter.PositionEyes(), p.Position())
+			shooterEyes, _ := e.Shooter.PositionEyes()
+			pitch, yaw := calculateAngles(shooterEyes, p.Position())
 			
 			// Difference in angles
 			pitchDiff := math.Abs(float64(e.Shooter.ViewDirectionX() - pitch))
@@ -129,7 +130,8 @@ func (a *PrematureFireAnalyzer) OnTickDone(state *parser.GameState) {
 			continue
 		}
 
-		pitch, yaw := calculateAngles(targetPlayer.PositionEyes(), p.Position())
+		targetEyes, _ := targetPlayer.PositionEyes()
+		pitch, yaw := calculateAngles(targetEyes, p.Position())
 		
 		pitchDiff := math.Abs(float64(targetPlayer.ViewDirectionX() - pitch))
 		yawDiff := math.Abs(float64(targetPlayer.ViewDirectionY() - yaw))
