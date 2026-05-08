@@ -8,23 +8,24 @@
         apiKey: string;
         authCode: string;
         knownCode: string;
-        limit: number;
     };
 
+    const pageSize = 10;
     let request: FetchRequest | null = null;
     let matches: any[] = [];
     let loading = true;
+    let loadingMore = false;
     let error = '';
-    let processingKey = '';
-    let processingStatuses: Record<string, string> = {};
+    let cursor = '';
+    let hasMore = true;
 
-    function setProcessingStatus(key: string, status: string) {
-        processingStatuses = { ...processingStatuses, [key]: status };
-    }
-
-    async function loadMatches() {
+    async function loadMatches({ append = false } = {}) {
         if (!request) return;
-        loading = true;
+        if (append) {
+            loadingMore = true;
+        } else {
+            loading = true;
+        }
         error = '';
 
         try {
@@ -32,56 +33,25 @@
                 api_key: request.apiKey,
                 steam_id: request.steamId,
                 auth_code: request.authCode,
-                known_code: request.knownCode,
-                limit: String(request.limit)
+                known_code: cursor || request.knownCode,
+                limit: String(pageSize)
             });
             const res = await fetch(`http://localhost:8080/api/fetch/sharecodes?${params.toString()}`);
             if (!res.ok) throw new Error(await res.text());
             const payload = await res.json();
-            matches = payload.share_codes ?? [];
+            const nextMatches = payload.share_codes ?? [];
+            matches = append ? [...matches, ...nextMatches] : nextMatches;
+
+            if (nextMatches.length > 0) {
+                cursor = nextMatches[nextMatches.length - 1].share_code;
+            }
+
+            hasMore = nextMatches.length === pageSize;
         } catch (e: any) {
             error = e.message;
         } finally {
             loading = false;
-        }
-    }
-
-    async function processMatch(match: any) {
-        if (!request?.playerName) {
-            error = 'Missing player name. Go back and fill the fetch form again.';
-            return;
-        }
-
-        const key = match.share_code;
-        processingKey = key;
-        setProcessingStatus(key, 'Requesting download...');
-
-        const timers = [
-            setTimeout(() => setProcessingStatus(key, 'Downloading demo...'), 400),
-            setTimeout(() => setProcessingStatus(key, 'Decompressing demo...'), 2500),
-            setTimeout(() => setProcessingStatus(key, 'Processing demo...'), 4500),
-            setTimeout(() => setProcessingStatus(key, 'Saving insights...'), 10000)
-        ];
-
-        try {
-            const res = await fetch('http://localhost:8080/api/fetch/process', {
-                method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({
-                    share_code: match.share_code,
-                    player_name: request.playerName
-                })
-            });
-            if (!res.ok) throw new Error(await res.text());
-            const result = await res.json();
-
-            matches = matches.map((candidate) => candidate.share_code === match.share_code ? { ...candidate, processed: true, downloaded: true } : candidate);
-            setProcessingStatus(key, `Done. Saved ${result.insights ?? 0} insights.`);
-        } catch (e: any) {
-            setProcessingStatus(key, `Failed: ${e.message}`);
-        } finally {
-            timers.forEach(clearTimeout);
-            processingKey = '';
+            loadingMore = false;
         }
     }
 
@@ -99,6 +69,7 @@
             return;
         }
 
+        cursor = request.knownCode;
         loadMatches();
     });
 </script>
@@ -161,24 +132,33 @@
                             <dt>File</dt>
                             <dd>{match.file_name}</dd>
                         </div>
+                        <div>
+                            <dt>Replay URL</dt>
+                            <dd>{match.demo_url || 'Unavailable via Steam Web API'}</dd>
+                        </div>
                     </dl>
+
+                    {#if match.details}
+                        <p class="small muted">{match.details}</p>
+                    {/if}
 
                     <div class="match-actions">
                         <button
                             class="chip primary-chip"
-                            disabled={processingKey === match.share_code || match.processed}
-                            aria-busy={processingKey === match.share_code}
-                            onclick={() => processMatch(match)}
+                            disabled
                         >
-                            {match.processed ? 'Analyzed' : (match.downloaded ? 'Analyze Again' : 'Download & Analyze')}
+                            Download unavailable
                         </button>
-                        {#if processingStatuses[match.share_code]}
-                            <div class="small muted process-status">{processingStatuses[match.share_code]}</div>
-                        {/if}
                     </div>
                 </article>
             {/each}
         </div>
+
+        {#if hasMore}
+            <div class="pagination-actions">
+                <button class="chip" aria-busy={loadingMore} disabled={loadingMore} onclick={() => loadMatches({ append: true })}>Load more</button>
+            </div>
+        {/if}
     {/if}
 </section>
 
@@ -250,8 +230,10 @@
         color: var(--color-danger);
     }
 
-    .process-status {
-        min-width: 10rem;
+    .pagination-actions {
+        display: flex;
+        justify-content: center;
+        padding-top: var(--space-4);
     }
 
     @media (max-width: 639px) {

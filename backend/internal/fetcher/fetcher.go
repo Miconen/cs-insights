@@ -31,6 +31,7 @@ type ShareCodeInfo struct {
 	TVPort     uint16 `json:"tv_port"`
 	DemoURL    string `json:"demo_url"`
 	FileName   string `json:"file_name"`
+	Details    string `json:"details"`
 	Downloaded bool   `json:"downloaded"`
 	Processed  bool   `json:"processed"`
 }
@@ -115,9 +116,8 @@ func BuildShareCodeInfo(shareCode string, outputDir string) (ShareCodeInfo, erro
 		return ShareCodeInfo{}, err
 	}
 
-	demoURL := DemoURLFromShareCode(decoded)
-	fileName := filepath.Base(demoURL)
-	demPath := strings.TrimSuffix(filepath.Join(outputDir, fileName), ".bz2")
+	fileName := fmt.Sprintf("match_%s.dem", decoded.MatchID.String())
+	demPath := filepath.Join(outputDir, fileName)
 	_, statErr := os.Stat(demPath)
 
 	return ShareCodeInfo{
@@ -125,8 +125,8 @@ func BuildShareCodeInfo(shareCode string, outputDir string) (ShareCodeInfo, erro
 		MatchID:    decoded.MatchID.String(),
 		OutcomeID:  decoded.OutcomeID.String(),
 		TVPort:     decoded.TVPort,
-		DemoURL:    demoURL,
 		FileName:   fileName,
+		Details:    "Steam Web API only returns share codes. Map, date, score and replay URL require Steam Game Coordinator match metadata.",
 		Downloaded: statErr == nil,
 	}, nil
 }
@@ -173,10 +173,6 @@ func littleEndianBigInt(bytes []byte) *big.Int {
 		reversed[len(bytes)-1-i] = bytes[i]
 	}
 	return new(big.Int).SetBytes(reversed)
-}
-
-func DemoURLFromShareCode(decoded MatchShareCode) string {
-	return fmt.Sprintf("https://replay%d.valve.net/730/%s_%s.dem.bz2", decoded.TVPort, decoded.MatchID.String(), decoded.OutcomeID.String())
 }
 
 // GetMatchHistory just returns the links found on the page

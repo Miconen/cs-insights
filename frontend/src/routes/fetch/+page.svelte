@@ -7,7 +7,6 @@
     let apiKey = '';
     let authCode = '';
     let knownCode = '';
-    let limit = 10;
     
     let loadingMatches = false;
     let matches: any[] = [];
@@ -21,7 +20,6 @@
             apiKey,
             authCode,
             knownCode,
-            limit
         }));
         await goto('/fetch/matches');
     }
@@ -91,10 +89,6 @@
                 </label>
 
                 <div class="token-actions">
-                    <label class="field compact-field stack-sm" for="limit">
-                        <span>Games</span>
-                        <input type="number" id="limit" bind:value={limit} min="1" max="100">
-                    </label>
                     <button class="chip primary-chip" type="submit">Fetch Share Codes</button>
                 </div>
             </form>
@@ -255,11 +249,6 @@
         text-decoration: underline;
     }
 
-    .compact-field {
-        width: 9rem;
-        flex: 0 0 auto;
-    }
-
     .token-actions,
     .legacy-actions {
         display: flex;
@@ -309,8 +298,5 @@
             flex-direction: column;
         }
 
-        .compact-field {
-            width: 100%;
-        }
     }
 </style>

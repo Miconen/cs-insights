@@ -136,6 +136,11 @@ func (s *Server) handleFetchProcessAPI(w http.ResponseWriter, r *http.Request) {
 		req.Link = info.DemoURL
 	}
 
+	if req.Link == "" && req.ShareCode != "" {
+		http.Error(w, "Share code was decoded, but the Steam Web API does not provide the replay URL. Direct download from share codes requires Steam Game Coordinator match metadata; use the legacy GCPD flow for now.", http.StatusNotImplemented)
+		return
+	}
+
 	if req.Link == "" || req.PlayerName == "" {
 		http.Error(w, "Missing link/share_code or player_name", http.StatusBadRequest)
 		return
