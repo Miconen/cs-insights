@@ -255,9 +255,14 @@ const dashboardTmpl = `
                                 </div>
                             {{end}}
                         </div>
-                        <div class="text-sm text-slate-500 text-right font-medium">
-                            <div class="bg-slate-100 px-3 py-1 rounded-md mb-1">Round {{.Round}}</div>
-                            <div class="text-xs text-slate-400">Tick {{.Tick}}</div>
+                        <div class="text-sm text-slate-500 text-right font-medium flex flex-col items-end">
+                            <div class="bg-slate-100 px-3 py-1 rounded-md mb-1 border border-slate-200">Round {{.Round}}</div>
+                            <div class="text-xs text-slate-400 mb-2">Tick {{.Tick}}</div>
+                            <button onclick="navigator.clipboard.writeText('demo_gototick {{.Tick}}'); this.innerText='Copied!'; setTimeout(() => this.innerText='demo_gototick {{.Tick}}', 2000)" 
+                                    class="text-xs font-mono bg-slate-800 text-slate-300 px-2 py-1.5 rounded hover:bg-slate-700 hover:text-white transition-colors border border-slate-700 focus:outline-none focus:ring-2 focus:ring-indigo-500"
+                                    title="Click to copy console command">
+                                demo_gototick {{.Tick}}
+                            </button>
                         </div>
                     </div>
                 </div>
