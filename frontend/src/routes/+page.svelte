@@ -104,7 +104,7 @@
         return data.insights.filter((insight: any) => insight.MatchName === selectedMatch);
     }
 
-    // Group insights by Game -> Round
+    // Group insights by Game -> Round -> Close ticks (<= 100 ticks)
     type RoundGroup = { matchName: string; matchDisplay: string; mapName: string; round: number; events: any[] };
 
     function groupInsights(insights: any[]): RoundGroup[] {
@@ -115,12 +115,18 @@
             matchDisplay: insights[0].match_display,
             mapName: insights[0].map_name,
             round: insights[0].Round, 
-            events: [] 
+            events: [insights[0]] 
         };
 
-        for (let i = 0; i < insights.length; i++) {
+        for (let i = 1; i < insights.length; i++) {
+            const prev = insights[i - 1];
             const curr = insights[i];
-            if (curr.MatchName === current.matchName && curr.Round === current.round) {
+            
+            const sameMatch = curr.MatchName === current.matchName;
+            const sameRound = curr.Round === current.round;
+            const closeTicks = Math.abs(curr.Tick - prev.Tick) <= 100;
+
+            if (sameMatch && sameRound && closeTicks) {
                 current.events.push(curr);
             } else {
                 result.push(current);
