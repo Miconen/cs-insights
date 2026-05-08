@@ -69,7 +69,7 @@ func main() {
 	engine.AddAnalyzer(analyzers.NewSpasmAnalyzer(*playerName, cfg.Analyzers.Spasm))
 	engine.AddAnalyzer(analyzers.NewSprayAnalyzer(*playerName))
 	engine.AddAnalyzer(analyzers.NewCounterStrafeAnalyzer(*playerName, cfg.Analyzers.CounterStrafe))
-	engine.AddAnalyzer(analyzers.NewCrosshairPlacementAnalyzer(*playerName, cfg.Analyzers.CrosshairHeight))
+	engine.AddAnalyzer(analyzers.NewGunfightAnalyzer(*playerName))
 
 	log.Println("Parsing demo (this may take a minute)...")
 	insights, err := engine.Parse()
@@ -89,6 +89,7 @@ func main() {
 			Type:        i.Type,
 			Severity:    i.Severity,
 			Description: i.Description,
+			Metadata:    i.Metadata,
 		})
 		if err != nil {
 			log.Printf("Failed to save insight: %v", err)

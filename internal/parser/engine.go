@@ -27,6 +27,7 @@ type InsightData struct {
 	Type        string
 	Severity    string
 	Description string
+	Metadata    string // JSON encoded metadata
 }
 
 type Engine struct {

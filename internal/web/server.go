@@ -26,10 +26,17 @@ func (s *Server) Start(addr string) error {
 
 type DashboardData struct {
 	PlayerName     string
-	Insights       []db.Insight
-	Advice         []string
+	Insights       []RichInsight
+	Advice         []template.HTML
 	ChartLabelsRaw string
 	ChartDataRaw   string
+	LostDuels      int
+	AvgTTDDiff     int
+}
+
+type RichInsight struct {
+	db.Insight
+	Meta map[string]interface{}
 }
 
 func (s *Server) handleDashboard(w http.ResponseWriter, r *http.Request) {
@@ -46,10 +53,31 @@ func (s *Server) handleDashboard(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// Aggregate Data
+	var richInsights []RichInsight
 	counts := make(map[string]int)
+	
+	lostDuels := 0
+	totalTTDDiff := 0.0
+
 	for _, i := range insights {
 		counts[i.Type]++
+		
+		ri := RichInsight{Insight: i, Meta: make(map[string]interface{})}
+		if i.Metadata != "" {
+			json.Unmarshal([]byte(i.Metadata), &ri.Meta)
+		}
+		
+		// Extract gunfight data for advice
+		if i.Type == "Gunfight" && ri.Meta["winner"] != nil && ri.Meta["winner"] != playerName {
+			lostDuels++
+			targetTTD, ok1 := ri.Meta["target_ttd_ms"].(float64)
+			enemyTTD, ok2 := ri.Meta["enemy_ttd_ms"].(float64)
+			if ok1 && ok2 && targetTTD > 0 && enemyTTD > 0 {
+				totalTTDDiff += (targetTTD - enemyTTD)
+			}
+		}
+
+		richInsights = append(richInsights, ri)
 	}
 
 	// Prepare Chart Data
@@ -64,37 +92,41 @@ func (s *Server) handleDashboard(w http.ResponseWriter, r *http.Request) {
 	dataJSON, _ := json.Marshal(dataVals)
 
 	// Generate Actionable Advice
-	var advice []string
+	var advice []template.HTML
+	
+	// Gunfight specific advice
+	if lostDuels > 0 {
+		avgDiff := 0
+		if totalTTDDiff > 0 {
+			avgDiff = int(totalTTDDiff / float64(lostDuels))
+			advice = append(advice, template.HTML("💀 <b>Gunfights:</b> You lost "+string(rune(lostDuels+'0'))+" duels. In the fights where you both dealt damage, you were on average <b>"+string(rune(avgDiff+'0'))+"ms slower</b> to deal damage than the enemy. Work on your reaction time and raw aim speed."))
+		}
+	}
+
 	if counts["MovementError"] > 5 {
-		advice = append(advice, "🛑 Counter-Strafing: You are firing while moving too fast in several engagements. Focus on completely releasing your movement keys (W/A/S/D) and tapping the opposite direction right before you click.")
+		advice = append(advice, template.HTML("🛑 <b>Counter-Strafing:</b> You are firing while moving too fast in several engagements. Focus on completely releasing your movement keys (W/A/S/D) and tapping the opposite direction right before you click."))
 	}
 	if counts["PrematureFire"] > 5 {
-		advice = append(advice, "⏱️ Premature Firing: You are clicking your mouse before your crosshair reaches the target. Try to consciously delay your trigger finger by a fraction of a second when flicking.")
+		advice = append(advice, template.HTML("⏱️ <b>Premature Firing:</b> You are clicking your mouse before your crosshair reaches the target. Try to consciously delay your trigger finger by a fraction of a second when flicking."))
 	}
 	if counts["Spasm"] > 3 {
-		advice = append(advice, "🧘 Aim Spasming: High erratic crosshair movement detected before shooting. You might be tensing your arm or panicking when an enemy appears. Focus on keeping your grip relaxed.")
-	}
-	if counts["CrosshairPlacement"] > 5 {
-		advice = append(advice, "📏 Crosshair Placement: You are consistently having to adjust your aim vertically (aiming at chest/feet). Practice resting your crosshair at head height when peeking corners.")
+		advice = append(advice, template.HTML("🧘 <b>Aim Spasming:</b> High erratic crosshair movement detected before shooting. You might be tensing your arm or panicking when an enemy appears. Focus on keeping your grip relaxed."))
 	}
 	if counts["PoorSpray"] > 3 {
-		advice = append(advice, "🔫 Spray Control: Your spray efficiency is dropping below 20%. Spend some time in a recoil control map or switch to bursting/tapping at medium to long ranges.")
-	}
-	if counts["SlowReaction"] > 5 {
-		advice = append(advice, "🐢 Slow Reaction: It's taking you a while to initiate aim movement after spotting an enemy. Ensure you are focused and not resting your eyes in passive positions.")
+		advice = append(advice, template.HTML("🔫 <b>Spray Control:</b> Your spray efficiency is dropping below 20%. Spend some time in a recoil control map or switch to bursting/tapping at medium to long ranges."))
 	}
 
 	// Sort insights by Tick/Round descending
-	sort.Slice(insights, func(i, j int) bool {
-		if insights[i].Round == insights[j].Round {
-			return insights[i].Tick > insights[j].Tick
+	sort.Slice(richInsights, func(i, j int) bool {
+		if richInsights[i].Round == richInsights[j].Round {
+			return richInsights[i].Tick > richInsights[j].Tick
 		}
-		return insights[i].Round > insights[j].Round
+		return richInsights[i].Round > richInsights[j].Round
 	})
 
 	data := DashboardData{
 		PlayerName:     playerName,
-		Insights:       insights,
+		Insights:       richInsights,
 		Advice:         advice,
 		ChartLabelsRaw: string(labelsJSON),
 		ChartDataRaw:   string(dataJSON),
@@ -172,7 +204,7 @@ const dashboardTmpl = `
                             <ul class="space-y-4">
                                 {{range .Advice}}
                                     <li class="flex gap-4 items-start bg-indigo-50/50 p-4 rounded-lg border border-indigo-100">
-                                        <div class="text-slate-800 leading-relaxed font-medium">{{.}}</div>
+                                        <div class="text-slate-800 leading-relaxed text-sm">{{.}}</div>
                                     </li>
                                 {{end}}
                             </ul>
@@ -204,6 +236,24 @@ const dashboardTmpl = `
                                 {{.Type}}
                             </span>
                             <h3 class="mt-3 text-lg font-medium text-slate-900">{{.Description}}</h3>
+                            
+                            {{if eq .Type "Gunfight"}}
+                                <div class="mt-4 bg-slate-50 p-3 rounded border border-slate-200">
+                                    <div class="text-xs font-bold text-slate-500 mb-2 uppercase tracking-wide">Duel Timeline</div>
+                                    <div class="flex flex-col space-y-1 text-sm font-mono text-slate-700">
+                                        <div class="flex"><span class="w-16 text-slate-400">0ms:</span> Spotted</div>
+                                        {{if gt .Meta.target_shot_ms 0.0}}<div class="flex"><span class="w-16 text-indigo-500">{{printf "%.0f" .Meta.target_shot_ms}}ms:</span> You fired</div>{{end}}
+                                        {{if gt .Meta.enemy_shot_ms 0.0}}<div class="flex"><span class="w-16 text-rose-500">{{printf "%.0f" .Meta.enemy_shot_ms}}ms:</span> Enemy fired</div>{{end}}
+                                        {{if gt .Meta.target_ttd_ms 0.0}}<div class="flex"><span class="w-16 text-indigo-500 font-bold">{{printf "%.0f" .Meta.target_ttd_ms}}ms:</span> You dealt damage</div>{{end}}
+                                        {{if gt .Meta.enemy_ttd_ms 0.0}}<div class="flex"><span class="w-16 text-rose-500 font-bold">{{printf "%.0f" .Meta.enemy_ttd_ms}}ms:</span> Enemy dealt damage</div>{{end}}
+                                    </div>
+                                    {{if gt .Meta.crosshair_pitch 0.0}}
+                                    <div class="mt-3 pt-3 border-t border-slate-200 text-sm text-slate-600">
+                                        <span class="font-bold">Crosshair Placement:</span> At the start of the duel, your crosshair was {{printf "%.1f" .Meta.crosshair_pitch}}° {{.Meta.crosshair_dir}}.
+                                    </div>
+                                    {{end}}
+                                </div>
+                            {{end}}
                         </div>
                         <div class="text-sm text-slate-500 text-right font-medium">
                             <div class="bg-slate-100 px-3 py-1 rounded-md mb-1">Round {{.Round}}</div>

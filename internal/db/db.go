@@ -13,9 +13,10 @@ type Insight struct {
 	MatchName   string
 	Round       int
 	Tick        int
-	Type        string // e.g., "PrematureFire", "Spasm", "SprayEfficiency"
+	Type        string // e.g., "PrematureFire", "Spasm", "SprayEfficiency", "Gunfight"
 	Severity    string // "Low", "Medium", "High"
 	Description string
+	Metadata    string // JSON encoded metadata for rich UI rendering
 	CreatedAt   time.Time
 }
 
@@ -48,6 +49,7 @@ func createTables(db *sql.DB) error {
 		type TEXT,
 		severity TEXT,
 		description TEXT,
+		metadata TEXT,
 		created_at DATETIME DEFAULT CURRENT_TIMESTAMP
 	);
 	`
@@ -62,15 +64,15 @@ func (d *Database) ClearInsights() error {
 
 func (d *Database) SaveInsight(i Insight) error {
 	query := `
-	INSERT INTO insights (player_name, match_name, round, tick, type, severity, description)
-	VALUES (?, ?, ?, ?, ?, ?, ?)
+	INSERT INTO insights (player_name, match_name, round, tick, type, severity, description, metadata)
+	VALUES (?, ?, ?, ?, ?, ?, ?, ?)
 	`
-	_, err := d.db.Exec(query, i.PlayerName, i.MatchName, i.Round, i.Tick, i.Type, i.Severity, i.Description)
+	_, err := d.db.Exec(query, i.PlayerName, i.MatchName, i.Round, i.Tick, i.Type, i.Severity, i.Description, i.Metadata)
 	return err
 }
 
 func (d *Database) GetInsightsForPlayer(playerName string) ([]Insight, error) {
-	query := `SELECT id, player_name, match_name, round, tick, type, severity, description, created_at 
+	query := `SELECT id, player_name, match_name, round, tick, type, severity, description, metadata, created_at 
 			  FROM insights WHERE player_name = ? ORDER BY id DESC`
 	rows, err := d.db.Query(query, playerName)
 	if err != nil {
@@ -81,7 +83,7 @@ func (d *Database) GetInsightsForPlayer(playerName string) ([]Insight, error) {
 	var insights []Insight
 	for rows.Next() {
 		var i Insight
-		err := rows.Scan(&i.ID, &i.PlayerName, &i.MatchName, &i.Round, &i.Tick, &i.Type, &i.Severity, &i.Description, &i.CreatedAt)
+		err := rows.Scan(&i.ID, &i.PlayerName, &i.MatchName, &i.Round, &i.Tick, &i.Type, &i.Severity, &i.Description, &i.Metadata, &i.CreatedAt)
 		if err != nil {
 			return nil, err
 		}
