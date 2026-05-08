@@ -49,13 +49,7 @@ Or from the repository root:
 make
 ```
 
-If you want the Steam match-history token flow, provide a Steam Web API key to the backend:
-
-```bash
-STEAM_WEB_API_KEY="your_key" make
-```
-
-You can create a Steam Web API key at `https://steamcommunity.com/dev/apikey`.
+If you want the Steam match-history token flow, enter your Steam Web API key in the Fetch Demos page. You can create a Steam Web API key at `https://steamcommunity.com/dev/apikey`.
 
 Then start the Svelte frontend:
 

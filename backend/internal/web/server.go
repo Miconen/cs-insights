@@ -71,7 +71,10 @@ func (s *Server) handleFetchListAPI(w http.ResponseWriter, r *http.Request) {
 }
 
 func (s *Server) handleFetchShareCodesAPI(w http.ResponseWriter, r *http.Request) {
-	apiKey := strings.TrimSpace(os.Getenv("STEAM_WEB_API_KEY"))
+	apiKey := strings.TrimSpace(r.URL.Query().Get("api_key"))
+	if apiKey == "" {
+		apiKey = strings.TrimSpace(os.Getenv("STEAM_WEB_API_KEY"))
+	}
 	steamID := r.URL.Query().Get("steam_id")
 	authCode := r.URL.Query().Get("auth_code")
 	knownCode := r.URL.Query().Get("known_code")
@@ -85,7 +88,7 @@ func (s *Server) handleFetchShareCodesAPI(w http.ResponseWriter, r *http.Request
 	}
 
 	if apiKey == "" {
-		http.Error(w, "Missing backend STEAM_WEB_API_KEY environment variable", http.StatusInternalServerError)
+		http.Error(w, "Missing api_key. Provide a Steam Web API key in the request or set STEAM_WEB_API_KEY on the backend.", http.StatusBadRequest)
 		return
 	}
 
