@@ -1,0 +1,25 @@
+<!doctype html>
+<html lang="en">
+	<head>
+		<meta charset="utf-8" />
+		<link rel="icon" href="%sveltekit.assets%/favicon.svg" type="image/svg+xml" />
+		<meta name="viewport" content="width=device-width, initial-scale=1" />
+		<meta name="description" content="CS Insights - Analyze your Counter-Strike 2 habits and performance." />
+		<!-- FOUC-safe theme bootstrap: runs before first paint -->
+		<script>
+			(function () {
+				try {
+					var stored = localStorage.getItem('theme') || 'system';
+					if (stored === 'system') {
+						stored = window.matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light';
+					}
+					document.documentElement.dataset.theme = stored;
+				} catch (_) {}
+			})();
+		</script>
+		%sveltekit.head%
+	</head>
+	<body data-sveltekit-preload-data="hover">
+		<div style="display: contents">%sveltekit.body%</div>
+	</body>
+</html>

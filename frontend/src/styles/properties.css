@@ -1,0 +1,111 @@
+/* ============================================================
+   properties.css — all design tokens for every theme.
+   This is the file you paste to an AI when asking for
+   visual changes. Every other stylesheet reads from here.
+   ============================================================ */
+
+/* ---------- DARK (default) ---------- */
+:root,
+:root[data-theme='dark'] {
+	/* surfaces */
+	--color-bg: #0a0a0c;
+	--color-surface: #0f1014;
+	--color-surface-2: #14161c;
+	--color-border: rgba(255, 255, 255, 0.06);
+
+	/* text */
+	--color-text: #e8e8ea;
+	--color-text-muted: #8a8a92;
+	--color-text-inverse: #0a0a0c;
+
+	/* accent */
+	--color-accent: #dc2626;
+	--color-accent-strong: #b91c1c;
+	--color-accent-contrast: #ffffff;
+
+	/* semantic */
+	--color-success: #10b981;
+	--color-danger: #ef4444;
+	--color-warning: #f5b33b;
+
+	/* rank medals */
+	--color-gold: #f5b33b;
+	--color-silver: #a1a1aa;
+	--color-bronze: #b45309;
+
+	/* typography */
+	--font-body: 'Inter Variable', ui-sans-serif, system-ui, -apple-system, sans-serif;
+	--font-mono: 'JetBrains Mono Variable', ui-monospace, 'SF Mono', monospace;
+
+	/* spacing scale */
+	--space-1: 0.25rem;
+	--space-2: 0.5rem;
+	--space-3: 0.75rem;
+	--space-4: 1rem;
+	--space-5: 1.5rem;
+	--space-6: 2rem;
+
+	/* radii */
+	--radius-sm: 4px;
+	--radius: 6px;
+	--radius-lg: 10px;
+
+	/* shadows */
+	--shadow-1: 0 1px 2px rgba(0, 0, 0, 0.4);
+	--shadow-2: 0 4px 12px rgba(0, 0, 0, 0.5);
+
+	/* pico integration */
+	--pico-background-color: var(--color-bg);
+	--pico-color: var(--color-text);
+	--pico-primary: var(--color-accent);
+	--pico-primary-hover: var(--color-accent-strong);
+	--pico-primary-background: var(--color-accent);
+	--pico-muted-color: var(--color-text-muted);
+	--pico-card-background-color: var(--color-surface);
+	--pico-card-sectioning-background-color: var(--color-surface-2);
+	--pico-form-element-background-color: var(--color-surface);
+	--pico-border-color: var(--color-border);
+}
+
+/* ---------- LIGHT ---------- */
+:root[data-theme='light'] {
+	--color-bg: #fafafa;
+	--color-surface: #ffffff;
+	--color-surface-2: #f4f4f5;
+	--color-border: rgba(0, 0, 0, 0.06);
+
+	--color-text: #18181b;
+	--color-text-muted: #71717a;
+	--color-text-inverse: #ffffff;
+
+	--color-accent: #dc2626;
+	--color-accent-strong: #b91c1c;
+	--color-accent-contrast: #ffffff;
+
+	--color-success: #059669;
+	--color-danger: #dc2626;
+	--color-warning: #d97706;
+
+	--color-gold: #d97706;
+	--color-silver: #71717a;
+	--color-bronze: #92400e;
+
+	--shadow-1: 0 1px 2px rgba(0, 0, 0, 0.05);
+	--shadow-2: 0 4px 12px rgba(0, 0, 0, 0.08);
+
+	--pico-background-color: var(--color-bg);
+	--pico-color: var(--color-text);
+	--pico-primary: var(--color-accent);
+	--pico-primary-hover: var(--color-accent-strong);
+	--pico-primary-background: var(--color-accent);
+	--pico-muted-color: var(--color-text-muted);
+	--pico-card-background-color: var(--color-surface);
+	--pico-card-sectioning-background-color: var(--color-surface-2);
+	--pico-form-element-background-color: var(--color-surface);
+	--pico-border-color: var(--color-border);
+}
+
+/* ---------- SYSTEM preference fallback removed ----------
+   System theme is now handled by setting data-theme="dark" | "light"
+   dynamically in app.html and ThemeSwitcher.svelte based on matchMedia.
+   This avoids Pico's default dark theme colors from leaking through. */
