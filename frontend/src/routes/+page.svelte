@@ -74,6 +74,16 @@
     onMount(() => {
         if (playerName) {
             fetchData();
+            localStorage.setItem('cs-insights:last-player', playerName);
+            return;
+        }
+
+        const rememberedPlayer = localStorage.getItem('cs-insights:last-player');
+        if (rememberedPlayer) {
+            playerName = rememberedPlayer;
+            searchInput = rememberedPlayer;
+            window.history.replaceState({}, '', `?player=${encodeURIComponent(rememberedPlayer)}`);
+            fetchData();
         }
     });
 
@@ -82,6 +92,7 @@
         if (searchInput.trim()) {
             playerName = searchInput.trim();
             selectedMatch = 'all';
+            localStorage.setItem('cs-insights:last-player', playerName);
             window.history.pushState({}, '', `?player=${encodeURIComponent(playerName)}`);
             fetchData();
         }
