@@ -104,39 +104,40 @@
         return data.insights.filter((insight: any) => insight.MatchName === selectedMatch);
     }
 
-    // Group consecutive insights that are within 100 ticks of each other
-    // into clusters. A cluster with >1 entry renders as a collapsible group.
-    type Cluster = { lead: any; rest: any[]; open: boolean };
+    // Group consecutive insights within the same round and ≤100 ticks apart.
+    type Cluster = { lead: any; rest: any[] };
 
     function clusterInsights(insights: any[]): Cluster[] {
         if (!insights.length) return [];
-        const clusters: Cluster[] = [];
-        let current: Cluster = { lead: insights[0], rest: [], open: false };
+        const result: Cluster[] = [];
+        let current: Cluster = { lead: insights[0], rest: [] };
 
         for (let i = 1; i < insights.length; i++) {
             const prev = insights[i - 1];
             const curr = insights[i];
-            const sameRound = curr.Round === prev.Round;
-            const closeTicks = Math.abs(curr.Tick - prev.Tick) <= 100;
-
-            if (sameRound && closeTicks) {
+            if (curr.Round === prev.Round && Math.abs(curr.Tick - prev.Tick) <= 100) {
                 current.rest.push(curr);
             } else {
-                clusters.push(current);
-                current = { lead: curr, rest: [], open: false };
+                result.push(current);
+                current = { lead: curr, rest: [] };
             }
         }
-        clusters.push(current);
-        return clusters;
+        result.push(current);
+        return result;
     }
 
-    let clusters: Cluster[] = [];
-    $: clusters = clusterInsights(visibleInsights());
+    // Track which clusters are expanded by a stable key (Round-Tick of lead).
+    let openKeys = new Set<string>();
 
-    function toggleCluster(cluster: Cluster) {
-        cluster.open = !cluster.open;
-        clusters = clusters; // trigger reactivity
+    function clusterKey(c: Cluster) { return `${c.lead.Round}-${c.lead.Tick}`; }
+
+    function toggleCluster(c: Cluster) {
+        const key = clusterKey(c);
+        if (openKeys.has(key)) openKeys.delete(key); else openKeys.add(key);
+        openKeys = new Set(openKeys); // trigger reactivity
     }
+
+    function isOpen(c: Cluster) { return openKeys.has(clusterKey(c)); }
 
     function copytick(tick: number, btn: HTMLElement) {
         navigator.clipboard.writeText(`demo_gototick ${tick}`);
@@ -247,7 +248,7 @@
                 </label>
             {/if}
         </div>
-        {#each clusters as cluster}
+        {#each clusterInsights(visibleInsights()) as cluster}
             <!-- Single incident or cluster lead -->
             <div class="incident-card card" style="--sev: {severityColor[cluster.lead.Severity] ?? 'var(--color-accent)'}">
                 <div class="incident-strip" style="background: {severityColor[cluster.lead.Severity] ?? 'var(--color-accent)'}"></div>
@@ -295,13 +296,13 @@
                         </button>
                         {#if cluster.rest.length > 0}
                             <button class="chip cluster-toggle" onclick={() => toggleCluster(cluster)}>
-                                {cluster.open ? '▲' : '▼'} {cluster.rest.length} nearby {cluster.rest.length === 1 ? 'event' : 'events'}
+                                {isOpen(cluster) ? '▲' : '▼'} {cluster.rest.length} nearby {cluster.rest.length === 1 ? 'event' : 'events'}
                             </button>
                         {/if}
                     </div>
 
                     <!-- Collapsed cluster items -->
-                    {#if cluster.rest.length > 0 && cluster.open}
+                    {#if cluster.rest.length > 0 && isOpen(cluster)}
                         <div class="cluster-children">
                             {#each cluster.rest as sub}
                                 <div class="cluster-child">
