@@ -248,77 +248,67 @@
             {/if}
         </div>
         {#each clusterInsights(visibleInsights()) as cluster}
-            <!-- Single incident or cluster lead -->
-            <div class="incident-card card" style="--sev: {severityColor[cluster.lead.Severity] ?? 'var(--color-accent)'}">
-                <div class="incident-strip" style="background: {severityColor[cluster.lead.Severity] ?? 'var(--color-accent)'}"></div>
+            {@const allEvents = [cluster.lead, ...cluster.rest]}
+            <div class="event-group card">
+                <!-- Context header -->
+                <div class="event-group-header row-between">
+                    <span class="small muted">{cluster.lead.map_name || 'Unknown map'} · {cluster.lead.match_display || ''}</span>
+                    <span class="mono small muted">Round {cluster.lead.Round}</span>
+                </div>
 
-                <div class="incident-body">
-                    <div class="incident-head">
-                        <div class="incident-title">
-                            <span class="incident-type">{cluster.lead.Type}</span>
-                            <span class="small muted">{cluster.lead.map_name || 'Unknown map'} · {cluster.lead.match_display || ''}</span>
-                        </div>
-                        <div class="incident-coords mono small muted">
-                            R{cluster.lead.Round} · T{cluster.lead.Tick}
-                        </div>
-                    </div>
+                <!-- Vertical event list -->
+                <div class="event-list">
+                    {#each allEvents as ev, i}
+                        <div class="event-row">
+                            <!-- Gutter: dot + connecting line -->
+                            <div class="event-gutter">
+                                <div class="event-dot" style="background: {severityColor[ev.Severity] ?? 'var(--color-accent)'}"></div>
+                                {#if i < allEvents.length - 1}
+                                    <div class="event-connector"></div>
+                                {/if}
+                            </div>
 
-                    <p class="incident-desc">{cluster.lead.Description}</p>
-
-                    {#if cluster.lead.Type === "Gunfight" && cluster.lead.meta}
-                        <div class="duel-timeline">
-                            <div class="timeline-row"><span class="t-time">0ms</span><span class="t-label">Spotted</span></div>
-                            {#if cluster.lead.meta.target_shot_ms > 0}
-                                <div class="timeline-row you"><span class="t-time">{Math.round(cluster.lead.meta.target_shot_ms)}ms</span><span class="t-label">You fired</span></div>
-                            {/if}
-                            {#if cluster.lead.meta.enemy_shot_ms > 0}
-                                <div class="timeline-row enemy"><span class="t-time">{Math.round(cluster.lead.meta.enemy_shot_ms)}ms</span><span class="t-label">Enemy fired</span></div>
-                            {/if}
-                            {#if cluster.lead.meta.target_ttd_ms > 0}
-                                <div class="timeline-row you bold"><span class="t-time">{Math.round(cluster.lead.meta.target_ttd_ms)}ms</span><span class="t-label">You dealt damage</span></div>
-                            {/if}
-                            {#if cluster.lead.meta.enemy_ttd_ms > 0}
-                                <div class="timeline-row enemy bold"><span class="t-time">{Math.round(cluster.lead.meta.enemy_ttd_ms)}ms</span><span class="t-label">Enemy dealt damage</span></div>
-                            {/if}
-                            {#if cluster.lead.meta.crosshair_pitch > 0}
-                                <div class="timeline-note">Crosshair {cluster.lead.meta.crosshair_pitch.toFixed(1)}° {cluster.lead.meta.crosshair_dir} at duel start</div>
-                            {/if}
-                            {#if cluster.lead.meta.first_bullet_acc > 0}
-                                <div class="timeline-note">First bullet {cluster.lead.meta.first_bullet_acc.toFixed(1)}° off head ({cluster.lead.meta.was_peeking ? 'Peeking' : 'Holding'})</div>
-                            {/if}
-                        </div>
-                    {/if}
-
-                    <div class="incident-footer">
-                        <button class="chip" onclick={(e) => copytick(cluster.lead.Tick, e.currentTarget)} title="Copy console command">
-                            demo_gototick {cluster.lead.Tick}
-                        </button>
-                        {#if cluster.rest.length > 0}
-                            <button class="chip cluster-toggle" onclick={() => toggleCluster(cluster)}>
-                                {isOpen(cluster) ? '▲' : '▼'} {cluster.rest.length} nearby {cluster.rest.length === 1 ? 'event' : 'events'}
-                            </button>
-                        {/if}
-                    </div>
-
-                    <!-- Collapsed cluster items -->
-                    {#if cluster.rest.length > 0 && isOpen(cluster)}
-                        <div class="cluster-children">
-                            {#each cluster.rest as sub}
-                                <div class="cluster-child">
-                                    <div class="incident-head">
-                                        <div class="incident-title">
-                                            <span class="incident-type small">{sub.Type}</span>
-                                        </div>
-                                        <div class="incident-coords mono small muted">T{sub.Tick}</div>
-                                    </div>
-                                    <p class="incident-desc small">{sub.Description}</p>
-                                    <button class="chip small-chip" onclick={(e) => copytick(sub.Tick, e.currentTarget)}>
-                                        demo_gototick {sub.Tick}
-                                    </button>
+                            <!-- Content -->
+                            <div class="event-content">
+                                <div class="event-row-head">
+                                    <span class="event-type">{ev.Type}</span>
+                                    <span class="mono muted" style="font-size:0.7rem">T{ev.Tick}</span>
+                                    <button class="ev-copy chip" onclick={(e) => copytick(ev.Tick, e.currentTarget)}>copy</button>
                                 </div>
-                            {/each}
+                                <p class="event-desc">{ev.Description}</p>
+
+                                {#if ev.Type === "Gunfight" && ev.meta}
+                                    {@const gfKey = `gf-${ev.Round}-${ev.Tick}`}
+                                    <button class="chip cluster-toggle" onclick={() => { openKeys = { ...openKeys, [gfKey]: !openKeys[gfKey] } }}>
+                                        {openKeys[gfKey] ? '▲ Hide' : '▼ Duel details'}
+                                    </button>
+                                    {#if openKeys[gfKey]}
+                                        <div class="duel-timeline">
+                                            <div class="timeline-row"><span class="t-time">0ms</span><span>Spotted</span></div>
+                                            {#if ev.meta.target_shot_ms > 0}
+                                                <div class="timeline-row you"><span class="t-time">{Math.round(ev.meta.target_shot_ms)}ms</span><span>You fired</span></div>
+                                            {/if}
+                                            {#if ev.meta.enemy_shot_ms > 0}
+                                                <div class="timeline-row enemy"><span class="t-time">{Math.round(ev.meta.enemy_shot_ms)}ms</span><span>Enemy fired</span></div>
+                                            {/if}
+                                            {#if ev.meta.target_ttd_ms > 0}
+                                                <div class="timeline-row you bold"><span class="t-time">{Math.round(ev.meta.target_ttd_ms)}ms</span><span>You dealt damage</span></div>
+                                            {/if}
+                                            {#if ev.meta.enemy_ttd_ms > 0}
+                                                <div class="timeline-row enemy bold"><span class="t-time">{Math.round(ev.meta.enemy_ttd_ms)}ms</span><span>Enemy dealt damage</span></div>
+                                            {/if}
+                                            {#if ev.meta.crosshair_pitch > 0}
+                                                <div class="timeline-note">Crosshair {ev.meta.crosshair_pitch.toFixed(1)}° {ev.meta.crosshair_dir} at duel start</div>
+                                            {/if}
+                                            {#if ev.meta.first_bullet_acc > 0}
+                                                <div class="timeline-note">First bullet {ev.meta.first_bullet_acc.toFixed(1)}° off head ({ev.meta.was_peeking ? 'Peeking' : 'Holding'})</div>
+                                            {/if}
+                                        </div>
+                                    {/if}
+                                {/if}
+                            </div>
                         </div>
-                    {/if}
+                    {/each}
                 </div>
             </div>
         {/each}
@@ -394,68 +384,97 @@
         margin-bottom: 0;
     }
 
-    /* ---- Incident card ---- */
-    .incident-card {
-        display: flex;
-        gap: 0;
+    /* ---- Event group card ---- */
+    .event-group {
         padding: 0;
         overflow: hidden;
     }
 
-    .incident-strip {
-        flex: 0 0 4px;
-        min-width: 4px;
-        background: var(--sev, var(--color-accent));
+    .event-group-header {
+        padding: var(--space-2) var(--space-4);
+        border-bottom: 1px solid var(--color-border);
+        background: var(--color-surface-2);
     }
 
-    .incident-body {
-        flex: 1;
-        min-width: 0;
+    .event-list {
+        padding: var(--space-3) var(--space-4);
         display: flex;
         flex-direction: column;
-        gap: var(--space-2);
-        padding: var(--space-3) var(--space-4);
+        gap: 0;
     }
 
-    .incident-head {
+    .event-row {
         display: flex;
-        justify-content: space-between;
-        align-items: baseline;
         gap: var(--space-3);
+        min-width: 0;
     }
 
-    .incident-title {
+    /* Left gutter: dot + vertical line */
+    .event-gutter {
+        display: flex;
+        flex-direction: column;
+        align-items: center;
+        flex-shrink: 0;
+        width: 1rem;
+    }
+
+    .event-dot {
+        width: 0.55rem;
+        height: 0.55rem;
+        border-radius: 50%;
+        flex-shrink: 0;
+        margin-top: 0.3rem;
+    }
+
+    .event-connector {
+        flex: 1;
+        width: 1px;
+        background: var(--color-border);
+        margin: 0.2rem 0;
+        min-height: 0.75rem;
+    }
+
+    .event-content {
+        flex: 1;
+        min-width: 0;
+        padding-bottom: var(--space-3);
+        display: flex;
+        flex-direction: column;
+        gap: var(--space-1);
+    }
+
+    .event-row:last-child .event-content {
+        padding-bottom: 0;
+    }
+
+    .event-row-head {
         display: flex;
         align-items: baseline;
         gap: var(--space-2);
         flex-wrap: wrap;
-        min-width: 0;
     }
 
-    .incident-type {
+    .event-type {
         font-weight: 700;
-        font-size: 0.88rem;
+        font-size: 0.82rem;
         text-transform: uppercase;
         letter-spacing: 0.04em;
     }
 
-    .incident-coords {
-        flex-shrink: 0;
-        white-space: nowrap;
-        font-size: 0.72rem;
+    .ev-copy {
+        font-size: 0.68rem;
+        padding: 0.08rem 0.35rem;
+        height: auto;
+        margin-left: auto;
+        color: var(--color-text-muted);
+        background: transparent;
     }
 
-    .incident-desc {
+    .event-desc {
         margin: 0;
-        font-size: 0.85rem;
+        font-size: 0.84rem;
+        color: var(--color-text-muted);
         line-height: 1.4;
-    }
-
-    .incident-footer {
-        display: flex;
-        flex-wrap: wrap;
-        gap: var(--space-2);
-        padding-top: var(--space-1);
     }
 
     .cluster-toggle {
@@ -463,29 +482,7 @@
         border-color: var(--color-border);
         color: var(--color-text-muted);
         font-size: 0.72rem;
-    }
-
-    .cluster-children {
-        border-top: 1px solid var(--color-border);
-        padding-top: var(--space-2);
-        display: flex;
-        flex-direction: column;
-        gap: var(--space-2);
-    }
-
-    .cluster-child {
-        display: flex;
-        flex-direction: column;
-        gap: var(--space-1);
-        background: var(--color-surface-2);
-        border-radius: var(--radius-sm);
-        padding: var(--space-2) var(--space-3);
-    }
-
-    .small-chip {
-        font-size: 0.68rem;
-        height: auto;
-        padding: 0.1rem 0.4rem;
+        align-self: flex-start;
         margin-top: var(--space-1);
     }
 
@@ -497,13 +494,14 @@
         display: flex;
         flex-direction: column;
         gap: 0.2rem;
+        margin-top: var(--space-1);
     }
 
     .timeline-row {
         display: flex;
         gap: var(--space-2);
         font-family: var(--font-mono);
-        font-size: 0.78rem;
+        font-size: 0.76rem;
         color: var(--color-text-muted);
     }
 
@@ -518,7 +516,7 @@
     }
 
     .timeline-note {
-        font-size: 0.76rem;
+        font-size: 0.74rem;
         color: var(--color-text-muted);
         margin-top: 0.2rem;
         border-top: 1px solid var(--color-border);
