@@ -168,7 +168,11 @@ func (a *GunfightAnalyzer) OnEvent(event interface{}, state *parser.GameState) {
 	}
 }
 
-func isNonGunWeapon(weapon common.Equipment) bool {
+
+func isNonGunWeapon(weapon *common.Equipment) bool {
+	if weapon == nil {
+		return true
+	}
 	return weapon.Class() == common.EqClassGrenade || weapon.Class() == common.EqClassEquipment
 }
 
