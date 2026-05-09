@@ -1,6 +1,7 @@
 <script lang="ts">
     import { onMount } from 'svelte';
     import { page } from '$app/stores';
+    import { replaceState, pushState } from '$app/navigation';
     import Chart from 'chart.js/auto';
 
     const initialPlayer = $page.url.searchParams.get('player') || '';
@@ -80,7 +81,7 @@
         if (rememberedPlayer) {
             playerName = rememberedPlayer;
             searchInput = rememberedPlayer;
-            window.history.replaceState({}, '', `?player=${encodeURIComponent(rememberedPlayer)}`);
+            replaceState(`?player=${encodeURIComponent(rememberedPlayer)}`, {});
             fetchData();
         }
     });
@@ -90,7 +91,7 @@
         if (searchInput.trim()) {
             playerName = searchInput.trim();
             localStorage.setItem('cs-insights:last-player', playerName);
-            window.history.pushState({}, '', `?player=${encodeURIComponent(playerName)}`);
+            pushState(`?player=${encodeURIComponent(playerName)}`, {});
             fetchData();
         }
     }
@@ -157,12 +158,9 @@
     // Gunfight timeline keys use gfKey prefix and are closed by default (=== true).
     let openKeys: Record<string, boolean> = {};
 
-    function isOpen(key: string, defaultOpen = true): boolean {
-        return defaultOpen ? openKeys[key] !== false : openKeys[key] === true;
-    }
-
     function toggle(key: string, defaultOpen = true) {
-        openKeys = { ...openKeys, [key]: !isOpen(key, defaultOpen) };
+        const currentlyOpen = defaultOpen ? openKeys[key] !== false : openKeys[key] === true;
+        openKeys = { ...openKeys, [key]: !currentlyOpen };
     }
 
     function toggleDuel(gfKey: string) { toggle(gfKey, false); }
@@ -220,7 +218,7 @@
             <h1 class="display">Performance Dashboard</h1>
             <p class="muted">Analysis for <mark>{playerName}</mark></p>
         </div>
-        <button class="chip" onclick={() => { playerName = ''; searchInput = ''; data = null; selectedMatch = 'all'; window.history.pushState({}, '', '/'); }}>Back to Search</button>
+        <button class="chip" onclick={() => { playerName = ''; searchInput = ''; data = null; selectedMatch = 'all'; pushState('/', {}); }}>Back to Search</button>
     </div>
 
     {#if loading}
@@ -266,31 +264,39 @@
 
         {#each buildTree(data.insights) as game, gi}
             <div class="card game-tree-card">
-                <!-- ── Game node ─────────────────────────────────────────── -->
-                <div class="game-header-row">
-                    <strong>{game.mapName}</strong>
-                    <span class="small muted mono">{game.displayName}</span>
-                    <span class="small muted">· {game.total} events</span>
-                </div>
+                <!-- ── Game header ─────────────────────────────────── -->
+                <button class="game-header-row" onclick={() => toggle(gameKey)}>
+                    <div style="flex: 1; text-align: left; display: flex; align-items: baseline; gap: var(--space-2); flex-wrap: wrap;">
+                        <strong>{game.mapName}</strong>
+                        <span class="small muted mono">{game.displayName}</span>
+                        <span class="small muted">· {game.total} events</span>
+                    </div>
+                    <span class="tree-chevron">{openKeys[gameKey] !== false ? '▲' : '▼'}</span>
+                </button>
 
-                <!-- ── Game children (rounds) ────────────────────────────── -->
-                <div class="game-children">
-                    {#each game.rounds as roundSection, ri}
+                {#if openKeys[gameKey] !== false}
+                    <div class="game-children">
+                        {#each game.rounds as roundSection, ri}
+                            {@const roundKey = 'r-' + game.matchName + '-' + roundSection.round}
 
-                        <!-- ── Round node ─────────────────────────────────── -->
-                        <div class="ot-row">
-                            <div class="ot-gutter">
-                                <div class="ot-dot round-dot"></div>
-                                {#if ri < game.rounds.length - 1 || roundSection.clusters.length > 0}
-                                    <div class="ot-connector"></div>
-                                {/if}
-                            </div>
-                            <span class="round-label small">Round {roundSection.round} <span class="muted">· {roundSection.total} event{roundSection.total !== 1 ? 's' : ''}</span></span>
-                        </div>
+                            <!-- ── Round node ─────────────────────────────────── -->
+                            <button class="ot-row round-row-btn" onclick={() => toggle(roundKey)}>
+                                <div class="ot-gutter">
+                                    <div class="ot-dot round-dot"></div>
+                                    {#if ri < game.rounds.length - 1 || roundSection.clusters.length > 0}
+                                        <div class="ot-connector"></div>
+                                    {/if}
+                                </div>
+                                <span class="round-label small" style="flex: 1; text-align: left;">
+                                    Round {roundSection.round} <span class="muted">· {roundSection.total} event{roundSection.total !== 1 ? 's' : ''}</span>
+                                </span>
+                                <span class="tree-chevron" style="padding-right: var(--space-4);">{openKeys[roundKey] !== false ? '▲' : '▼'}</span>
+                            </button>
 
-                        <!-- ── Round children (events) ──────── -->
-                        <div class="round-indent" class:last-round={ri === game.rounds.length - 1}>
-                            <div class="event-list">
+                            <!-- ── Round children (events) ──────── -->
+                            {#if openKeys[roundKey] !== false}
+                                <div class="round-indent" class:last-round={ri === game.rounds.length - 1}>
+                                    <div class="event-list">
                                 {#each roundSection.clusters as cluster, ci}
                                     {#each cluster.events as ev, i}
                                         {@const isLastEventOfRound = ci === roundSection.clusters.length - 1 && i === cluster.events.length - 1}
@@ -312,9 +318,9 @@
                                                 {#if ev.Type === "Gunfight" && ev.meta}
                                                     {@const gfKey = `gf-${ev.Round}-${ev.Tick}`}
                                                     <button class="chip cluster-toggle" onclick={() => toggleDuel(gfKey)}>
-                                                        {isOpen(gfKey, false) ? '▲ Hide' : '▼ Duel details'}
+                                                        {openKeys[gfKey] ? '▲ Hide' : '▼ Duel details'}
                                                     </button>
-                                                    {#if isOpen(gfKey, false)}
+                                                    {#if openKeys[gfKey]}
                                                         <div class="duel-timeline">
                                                             {#if ev.meta.analysis}
                                                                 <div class="timeline-analysis">
@@ -339,9 +345,11 @@
                                 {/each}
                             </div>
                         </div>
+                        {/if}
 
                     {/each}
                 </div>
+                {/if}
             </div>
         {/each}
     {/if}
