@@ -50,8 +50,21 @@ func (s *Server) Start(addr string) error {
 }
 
 func (s *Server) handleFetchListAPI(w http.ResponseWriter, r *http.Request) {
-	steamID := r.URL.Query().Get("steam_id")
-	cookie := r.URL.Query().Get("cookie")
+	if r.Method != "POST" {
+		http.Error(w, "Method not allowed", http.StatusMethodNotAllowed)
+		return
+	}
+
+	var req struct {
+		SteamID string `json:"steam_id"`
+		Cookie  string `json:"cookie"`
+	}
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		http.Error(w, err.Error(), http.StatusBadRequest)
+		return
+	}
+	steamID := strings.TrimSpace(req.SteamID)
+	cookie := strings.TrimSpace(req.Cookie)
 
 	if steamID == "" || cookie == "" {
 		http.Error(w, "Missing steam_id or cookie", http.StatusBadRequest)
