@@ -265,39 +265,39 @@
         <div class="section-heading">Incident Log</div>
 
         {#each buildTree(data.insights) as game, gi}
+            <div class="card game-tree-card">
+                <!-- ── Game node ─────────────────────────────────────────── -->
+                <div class="game-header-row">
+                    <strong>{game.mapName}</strong>
+                    <span class="small muted mono">{game.displayName}</span>
+                    <span class="small muted">· {game.total} events</span>
+                </div>
 
-            <!-- ── Game node ─────────────────────────────────────────── -->
-            <div class="game-header-row">
-                <strong>{game.mapName}</strong>
-                <span class="small muted mono">{game.displayName}</span>
-                <span class="small muted">· {game.total} events</span>
-            </div>
+                <!-- ── Game children (rounds) ────────────────────────────── -->
+                <div class="game-children">
+                    {#each game.rounds as roundSection, ri}
 
-            <!-- ── Game children (rounds) ────────────────────────────── -->
-            <div class="game-children">
-                {#each game.rounds as roundSection, ri}
-
-                    <!-- ── Round node ─────────────────────────────────── -->
-                    <div class="ot-row">
-                        <div class="ot-gutter">
-                            <div class="ot-dot round-dot"></div>
-                            {#if ri < game.rounds.length - 1}
-                                <div class="ot-connector"></div>
-                            {/if}
+                        <!-- ── Round node ─────────────────────────────────── -->
+                        <div class="ot-row">
+                            <div class="ot-gutter">
+                                <div class="ot-dot round-dot"></div>
+                                {#if ri < game.rounds.length - 1 || roundSection.clusters.length > 0}
+                                    <div class="ot-connector"></div>
+                                {/if}
+                            </div>
+                            <span class="round-label small">Round {roundSection.round} <span class="muted">· {roundSection.total} event{roundSection.total !== 1 ? 's' : ''}</span></span>
                         </div>
-                        <span class="round-label small">Round {roundSection.round} <span class="muted">· {roundSection.total} event{roundSection.total !== 1 ? 's' : ''}</span></span>
-                    </div>
 
-                    <!-- ── Round children (floating cluster cards) ──────── -->
-                    <div class="round-indent" class:last-round={ri === game.rounds.length - 1}>
-                        {#each roundSection.clusters as cluster, ci}
-                            <div class="cluster-card card">
-                                <div class="event-list">
+                        <!-- ── Round children (events) ──────── -->
+                        <div class="round-indent" class:last-round={ri === game.rounds.length - 1}>
+                            <div class="event-list">
+                                {#each roundSection.clusters as cluster, ci}
                                     {#each cluster.events as ev, i}
+                                        {@const isLastEventOfRound = ci === roundSection.clusters.length - 1 && i === cluster.events.length - 1}
                                         <div class="event-row">
                                             <div class="event-gutter">
                                                 <div class="event-dot" style="background:{severityColor[ev.Severity]??'var(--color-accent)'}"></div>
-                                                {#if i < cluster.events.length - 1}
+                                                {#if !isLastEventOfRound}
                                                     <div class="event-connector"></div>
                                                 {/if}
                                             </div>
@@ -336,14 +336,13 @@
                                             </div>
                                         </div>
                                     {/each}
-                                </div>
+                                {/each}
                             </div>
-                        {/each}
-                    </div>
+                        </div>
 
-                {/each}
+                    {/each}
+                </div>
             </div>
-
         {/each}
     {/if}
     </section>
@@ -404,15 +403,88 @@
     }
 
     /* ── Outer tree: game → round ────────────────────────────────────── */
+    .game-tree-card {
+        padding: 0;
+        overflow: hidden;
+    }
+
     .game-header-row {
         display: flex;
         align-items: baseline;
         gap: var(--space-2);
         flex-wrap: wrap;
-        margin-bottom: var(--space-3);
         font-size: 1.1rem;
         border-bottom: 1px solid var(--color-border);
+        background: var(--color-surface-2);
+        padding: var(--space-3) var(--space-4);
+    }
+
+    .game-children {
+        display: flex;
+        flex-direction: column;
+        padding-top: var(--space-3);
+    }
+
+    .ot-row {
+        display: flex;
+        align-items: flex-start;
+        gap: var(--space-2);
+        padding: 0 var(--space-4);
+    }
+
+    .ot-gutter {
+        display: flex;
+        flex-direction: column;
+        align-items: center;
+        flex-shrink: 0;
+        width: 1rem;
+    }
+
+    .ot-dot {
+        border-radius: 50%;
+        flex-shrink: 0;
+    }
+
+    .round-dot {
+        width: 0.45rem;
+        height: 0.45rem;
+        background: var(--color-text-muted);
+        margin-top: 0.25rem;
+    }
+
+    .ot-connector {
+        flex: 1;
+        width: 1px;
+        background: var(--color-border);
+        margin: 0.2rem 0;
+        min-height: var(--space-2);
+    }
+
+    .round-label {
+        font-weight: 600;
+        text-transform: uppercase;
+        letter-spacing: 0.04em;
+    }
+
+    .round-indent {
+        border-left: 1px solid var(--color-border);
+        margin-left: calc(var(--space-4) + 0.5rem - 0.5px); /* Align with round-dot center */
+        padding-left: var(--space-3);
         padding-bottom: var(--space-2);
+        display: flex;
+        flex-direction: column;
+        gap: var(--space-3);
+    }
+
+    .round-indent.last-round {
+        border-left-color: transparent;
+    }
+
+    .event-list {
+        padding: 0 var(--space-2) var(--space-3);
+        display: flex;
+        flex-direction: column;
+        gap: 0;
     }
 
     .game-children {
