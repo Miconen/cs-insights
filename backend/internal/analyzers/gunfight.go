@@ -82,10 +82,10 @@ type GunfightAnalyzer struct {
 }
 
 const (
-	peekMovementThreshold = 15.0
+	peekMovementThreshold = 55.0
 	trackingFOVDegrees    = 20.0
 	shotAssignmentFOV     = 35.0
-	duelStaleTicks        = 48
+	duelStaleTicks        = 64
 )
 
 func NewGunfightAnalyzer(targetPlayer string) *GunfightAnalyzer {
@@ -319,7 +319,11 @@ func (a *GunfightAnalyzer) OnTickDone(state *parser.GameState) {
 			}
 			duel.LastSeenTick = state.CurrentTick
 		} else {
-			if exists && duel.LastCombatTick == 0 && state.CurrentTick-duel.LastSeenTick > duelStaleTicks {
+			lastActivityTick := duel.LastSeenTick
+			if duel.LastCombatTick > lastActivityTick {
+				lastActivityTick = duel.LastCombatTick
+			}
+			if exists && state.CurrentTick-lastActivityTick > duelStaleTicks {
 				delete(a.activeDuels, p.UserID)
 			}
 		}
@@ -427,9 +431,11 @@ func (a *GunfightAnalyzer) resolveDuel(state *parser.GameState, duel *Gunfight, 
 	}
 
 	// Determine fundamental fight type
-	if meta.EnemyShotMs < 0 && meta.TargetShotMs >= 0 {
+	targetEngaged := meta.TargetShotMs >= 0 || meta.TargetTTDMs >= 0 || meta.TargetDamage > 0
+	enemyEngaged := meta.EnemyShotMs >= 0 || meta.EnemyTTDMs >= 0 || meta.EnemyDamage > 0
+	if !enemyEngaged && targetEngaged {
 		meta.FightType = "Flank / Unaware"
-	} else if meta.TargetShotMs < 0 && meta.EnemyShotMs >= 0 {
+	} else if !targetEngaged && enemyEngaged {
 		meta.FightType = "Flanked / Unaware"
 	} else if duel.TargetWasPeeking && duel.EnemyWasPeeking {
 		meta.FightType = "Peek vs Peek"
