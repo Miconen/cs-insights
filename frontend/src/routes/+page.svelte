@@ -325,6 +325,17 @@
                                                             </button>
                                                             {#if openKeys[gfKey]}
                                                                 <div class="duel-timeline">
+                                                                    {#if ev.meta.fight_type}
+                                                                        <div class="fight-tags" style="display: flex; gap: 0.5rem; flex-wrap: wrap; margin-bottom: 0.5rem;">
+                                                                            <span class="chip" style="background: var(--color-surface-3); border-color: transparent;">{ev.meta.fight_type}</span>
+                                                                            {#if ev.meta.tags}
+                                                                                {#each ev.meta.tags as tag}
+                                                                                    <span class="chip" style="border-style: dashed;">{tag}</span>
+                                                                                {/each}
+                                                                            {/if}
+                                                                        </div>
+                                                                    {/if}
+
                                                                     {#if ev.meta.analysis}
                                                                         <div class="timeline-analysis">
                                                                             <strong>Rating: {ev.meta.rating}/10</strong><br>

@@ -38,6 +38,7 @@ type Gunfight struct {
 	// First Bullet Accuracy
 	TargetFirstBulletAccuracy float64
 	TargetWasPeeking          bool
+	EnemyWasPeeking           bool
 }
 
 type GunfightMetadata struct {
@@ -49,7 +50,9 @@ type GunfightMetadata struct {
 	CrosshairDir   string  `json:"crosshair_dir"`
 	Winner         string  `json:"winner"`
 	FirstBulletAcc float64 `json:"first_bullet_acc"`
-	WasPeeking     bool    `json:"was_peeking"`
+	WasPeeking     bool    `json:"was_peeking"` // Kept for backwards compatibility
+	FightType      string  `json:"fight_type"`
+	Tags           []string `json:"tags"`
 
 	TargetDamage  int    `json:"target_damage"`
 	EnemyDamage   int    `json:"enemy_damage"`
@@ -68,13 +71,14 @@ type GunfightAnalyzer struct {
 	targetPlayer    string
 	insights        []parser.InsightData
 	activeDuels     map[int]*Gunfight
-	positionHistory []r3.Vector
+	positionHistory map[int][]r3.Vector
 }
 
 func NewGunfightAnalyzer(targetPlayer string) *GunfightAnalyzer {
 	return &GunfightAnalyzer{
-		targetPlayer: targetPlayer,
-		activeDuels:  make(map[int]*Gunfight),
+		targetPlayer:    targetPlayer,
+		activeDuels:     make(map[int]*Gunfight),
+		positionHistory: make(map[int][]r3.Vector),
 	}
 }
 
@@ -127,12 +131,14 @@ func (a *GunfightAnalyzer) OnEvent(event interface{}, state *parser.GameState) {
 				// Check if holding or peeking based on position history
 				var maxDist float64
 				currPos := e.Shooter.Position()
-				for _, pos := range a.positionHistory {
-					distX := currPos.X - pos.X
-					distY := currPos.Y - pos.Y
-					dist := math.Sqrt(float64(distX*distX + distY*distY))
-					if dist > maxDist {
-						maxDist = dist
+				if history, ok := a.positionHistory[e.Shooter.UserID]; ok {
+					for _, pos := range history {
+						distX := currPos.X - pos.X
+						distY := currPos.Y - pos.Y
+						dist := math.Sqrt(float64(distX*distX + distY*distY))
+						if dist > maxDist {
+							maxDist = dist
+						}
 					}
 				}
 				// If they moved more than 40 units in the last 1 second (~64 ticks), they are peeking/dancing
@@ -145,6 +151,20 @@ func (a *GunfightAnalyzer) OnEvent(event interface{}, state *parser.GameState) {
 			}
 			if duel.EnemyFirstShotTick == 0 {
 				duel.EnemyFirstShotTick = state.CurrentTick
+				
+				var maxDist float64
+				currPos := e.Shooter.Position()
+				if history, ok := a.positionHistory[e.Shooter.UserID]; ok {
+					for _, pos := range history {
+						distX := currPos.X - pos.X
+						distY := currPos.Y - pos.Y
+						dist := math.Sqrt(float64(distX*distX + distY*distY))
+						if dist > maxDist {
+							maxDist = dist
+						}
+					}
+				}
+				duel.EnemyWasPeeking = maxDist > 40.0
 			}
 		}
 
@@ -198,13 +218,23 @@ func (a *GunfightAnalyzer) OnTickDone(state *parser.GameState) {
 		for id := range a.activeDuels {
 			delete(a.activeDuels, id)
 		}
-		a.positionHistory = nil
+		// Clear history when dead/round over, but ensure map is initialized
+		a.positionHistory = make(map[int][]r3.Vector)
 		return
 	}
 
-	a.positionHistory = append(a.positionHistory, targetPlayer.Position())
-	if len(a.positionHistory) > 64 {
-		a.positionHistory = a.positionHistory[1:]
+	// Track positions for all active players
+	for _, p := range state.Parser.GameState().Participants().Playing() {
+		if !p.IsAlive() {
+			continue
+		}
+		uid := p.UserID
+		history := a.positionHistory[uid]
+		history = append(history, p.Position())
+		if len(history) > 64 {
+			history = history[1:]
+		}
+		a.positionHistory[uid] = history
 	}
 
 	// Update active duels or start new ones based on FOV
@@ -341,11 +371,27 @@ func (a *GunfightAnalyzer) resolveDuel(state *parser.GameState, duel *Gunfight, 
 		EnemyWeapon:    duel.EnemyWeapon,
 		TargetStartHP:  duel.TargetStartHP,
 		EnemyStartHP:   duel.EnemyStartHP,
+		Tags:           []string{},
 	}
 
 	// Only record if it was an actual duel (shots fired or damage dealt)
-	if meta.TargetShotMs == 0 && meta.EnemyShotMs == 0 && meta.TargetTTDMs == 0 && meta.EnemyTTDMs == 0 {
+	if meta.TargetShotMs < 0 && meta.EnemyShotMs < 0 && meta.TargetTTDMs < 0 && meta.EnemyTTDMs < 0 {
 		return
+	}
+
+	// Determine fundamental fight type
+	if meta.EnemyShotMs < 0 && meta.TargetShotMs >= 0 {
+		meta.FightType = "Flank / Unaware"
+	} else if meta.TargetShotMs < 0 && meta.EnemyShotMs >= 0 {
+		meta.FightType = "Flanked / Unaware"
+	} else if duel.TargetWasPeeking && duel.EnemyWasPeeking {
+		meta.FightType = "Peek vs Peek"
+	} else if duel.TargetWasPeeking && !duel.EnemyWasPeeking {
+		meta.FightType = "Peek vs Hold"
+	} else if !duel.TargetWasPeeking && duel.EnemyWasPeeking {
+		meta.FightType = "Hold vs Peek"
+	} else {
+		meta.FightType = "Hold vs Hold"
 	}
 
 	rating, analysis := evaluateDuel(duel, meta, winner == a.targetPlayer)
@@ -390,9 +436,10 @@ func evaluateDuel(duel *Gunfight, meta GunfightMetadata, won bool) (int, string)
 	if won {
 		rating += 2
 		details = append(details, "+2 You won the duel.")
-		if meta.TargetTTDMs > 0 && meta.TargetTTDMs < 300 {
+		if meta.TargetTTDMs >= 0 && meta.TargetTTDMs < 300 {
 			rating += 2 // Fast kill
 			details = append(details, fmt.Sprintf("+2 Excellent TTK (%.0fms).", meta.TargetTTDMs))
+			meta.Tags = append(meta.Tags, "Insta-kill")
 		} else if meta.TargetDamage >= 100 {
 			details = append(details, "Solid kill.")
 		}
@@ -400,24 +447,29 @@ func evaluateDuel(duel *Gunfight, meta GunfightMetadata, won bool) (int, string)
 		if meta.TargetStartHP < meta.EnemyStartHP-20 {
 			rating += 2 // Won at a disadvantage
 			details = append(details, "+2 Great job winning at a health disadvantage!")
+			meta.Tags = append(meta.Tags, "Disadvantage")
 		}
 
 		if meta.EnemyDamage >= 80 {
 			rating -= 2 // Barely survived
 			details = append(details, "-2 You barely survived this duel.")
+			meta.Tags = append(meta.Tags, "Close Call")
 		}
 	} else {
 		if meta.TargetDamage == 0 {
 			if meta.EnemyDamage >= 100 && meta.EnemyHits == 1 && meta.TargetShotMs < 0 {
 				details = append(details, "0 You were instantly one-tapped before you could react. Just unlucky.")
+				meta.Tags = append(meta.Tags, "Insta-killed")
 			} else {
 				rating -= 3 // Whiffed or instakilled
 				if meta.TargetShotMs >= 0 && (meta.EnemyShotMs < 0 || meta.TargetShotMs < meta.EnemyShotMs) {
 					details = append(details, "-3 You shot first but whiffed completely, dealing 0 damage while they killed you.")
+					meta.Tags = append(meta.Tags, "Whiffed")
 				} else if meta.TargetShotMs < 0 {
 					details = append(details, "-3 You were killed before you could even fire a shot.")
 				} else {
 					details = append(details, "-3 You dealt 0 damage in this fight.")
+					meta.Tags = append(meta.Tags, "Whiffed")
 				}
 			}
 		} else if meta.TargetDamage >= 80 {
@@ -427,9 +479,11 @@ func evaluateDuel(duel *Gunfight, meta GunfightMetadata, won bool) (int, string)
 				msg += fmt.Sprintf(" Lost the aim duel against %s with your %s.", meta.EnemyWeapon, meta.TargetWeapon)
 			}
 			details = append(details, msg)
+			meta.Tags = append(meta.Tags, "Close Call", "Aim Duel")
 		} else {
 			rating -= 1
 			details = append(details, fmt.Sprintf("-1 You traded some damage (%d in %d hits).", meta.TargetDamage, meta.TargetHits))
+			meta.Tags = append(meta.Tags, "Traded Damage")
 		}
 
 		if meta.TargetStartHP <= 20 {
