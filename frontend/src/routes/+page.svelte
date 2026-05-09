@@ -11,8 +11,6 @@
     let error = '';
     let chartCanvas: HTMLCanvasElement;
     let chartInstance: any;
-    let selectedMatch = 'all';
-
     async function fetchData() {
         if (!playerName) return;
         loading = true;
@@ -91,64 +89,83 @@
         e.preventDefault();
         if (searchInput.trim()) {
             playerName = searchInput.trim();
-            selectedMatch = 'all';
             localStorage.setItem('cs-insights:last-player', playerName);
             window.history.pushState({}, '', `?player=${encodeURIComponent(playerName)}`);
             fetchData();
         }
     }
 
-    function visibleInsights() {
-        if (!data?.insights) return [];
-        if (selectedMatch === 'all') return data.insights;
-        return data.insights.filter((insight: any) => insight.MatchName === selectedMatch);
-    }
+    // ── Tree structure: Game → Round → Clusters (within 100 ticks) ──────────
+    type TickCluster = { events: any[] };
+    type RoundSection = { round: number; clusters: TickCluster[]; total: number };
+    type GameSection  = { matchName: string; displayName: string; mapName: string; rounds: RoundSection[]; total: number };
 
-    // Group insights by Game -> Round -> Close ticks (<= 100 ticks)
-    type RoundGroup = { matchName: string; matchDisplay: string; mapName: string; round: number; events: any[] };
-
-    function groupInsights(insights: any[]): RoundGroup[] {
+    function buildTree(insights: any[]): GameSection[] {
         if (!insights.length) return [];
-        const result: RoundGroup[] = [];
-        let current: RoundGroup = { 
-            matchName: insights[0].MatchName, 
-            matchDisplay: insights[0].match_display,
-            mapName: insights[0].map_name,
-            round: insights[0].Round, 
-            events: [insights[0]] 
-        };
 
-        for (let i = 1; i < insights.length; i++) {
-            const prev = insights[i - 1];
-            const curr = insights[i];
-            
-            const sameMatch = curr.MatchName === current.matchName;
-            const sameRound = curr.Round === current.round;
-            const closeTicks = Math.abs(curr.Tick - prev.Tick) <= 100;
+        // Preserve server sort order (desc round/tick) for insertion into maps.
+        const gamesMap = new Map<string, Map<number, any[]>>();
+        const gameMeta = new Map<string, { displayName: string; mapName: string }>();
 
-            if (sameMatch && sameRound && closeTicks) {
-                current.events.push(curr);
-            } else {
-                result.push(current);
-                current = { 
-                    matchName: curr.MatchName, 
-                    matchDisplay: curr.match_display,
-                    mapName: curr.map_name,
-                    round: curr.Round, 
-                    events: [curr] 
-                };
+        for (const ins of insights) {
+            const mn = ins.MatchName;
+            if (!gamesMap.has(mn)) {
+                gamesMap.set(mn, new Map());
+                gameMeta.set(mn, { displayName: ins.match_display || '', mapName: ins.map_name || 'Unknown map' });
             }
+            const rm = gamesMap.get(mn)!;
+            if (!rm.has(ins.Round)) rm.set(ins.Round, []);
+            rm.get(ins.Round)!.push(ins);
         }
-        result.push(current);
+
+        const result: GameSection[] = [];
+
+        for (const [matchName, roundsMap] of gamesMap) {
+            const meta = gameMeta.get(matchName)!;
+            const rounds: RoundSection[] = [];
+            let total = 0;
+
+            // Sort rounds descending
+            const sortedRounds = [...roundsMap.entries()].sort((a, b) => b[0] - a[0]);
+
+            for (const [round, evts] of sortedRounds) {
+                // evts are already in descending tick order; cluster by 100-tick proximity
+                const clusters: TickCluster[] = [];
+                let cur: TickCluster = { events: [evts[0]] };
+
+                for (let i = 1; i < evts.length; i++) {
+                    if (Math.abs(evts[i].Tick - evts[i - 1].Tick) <= 100) {
+                        cur.events.push(evts[i]);
+                    } else {
+                        clusters.push(cur);
+                        cur = { events: [evts[i]] };
+                    }
+                }
+                clusters.push(cur);
+                rounds.push({ round, clusters, total: evts.length });
+                total += evts.length;
+            }
+
+            result.push({ matchName, displayName: meta.displayName, mapName: meta.mapName, rounds, total });
+        }
+
         return result;
     }
 
-    // Track which clusters are expanded. Use a plain Record for Svelte 5 reactivity.
+    // ── Unified open/close state ──────────────────────────────────────────────
+    // Absent key or '!== false' means open by default (games & rounds).
+    // Gunfight timeline keys use gfKey prefix and are closed by default (=== true).
     let openKeys: Record<string, boolean> = {};
 
-    function toggleDuel(gfKey: string) {
-        openKeys = { ...openKeys, [gfKey]: !openKeys[gfKey] };
+    function isOpen(key: string, defaultOpen = true): boolean {
+        return defaultOpen ? openKeys[key] !== false : openKeys[key] === true;
     }
+
+    function toggle(key: string, defaultOpen = true) {
+        openKeys = { ...openKeys, [key]: !isOpen(key, defaultOpen) };
+    }
+
+    function toggleDuel(gfKey: string) { toggle(gfKey, false); }
 
     function copytick(tick: number, btn: HTMLElement) {
         navigator.clipboard.writeText(`demo_gototick ${tick}`);
@@ -245,82 +262,89 @@
             </div>
         </div>
 
-        <div class="row-between incident-toolbar">
-            <div class="section-heading">Raw Incident Log</div>
-            {#if data.summary?.games?.length > 1}
-                <label class="game-filter" for="game-filter">
-                    Filter by game
-                    <select id="game-filter" bind:value={selectedMatch}>
-                        <option value="all">All games</option>
-                        {#each data.summary.games as game}
-                            <option value={game.match_name}>{game.map_name || 'Unknown map'} · {game.display_name} ({game.incident_count})</option>
+        <div class="section-heading">Incident Log</div>
+
+        {#each buildTree(data.insights) as game}
+            {@const gameKey = 'g-' + game.matchName}
+            <div class="game-card card">
+
+                <!-- ── Game header ─────────────────────────────────── -->
+                <button class="game-header row-between" onclick={() => toggle(gameKey)}>
+                    <div class="game-title">
+                        <strong>{game.mapName}</strong>
+                        <span class="small muted mono">{game.displayName}</span>
+                    </div>
+                    <div class="game-meta small muted">
+                        {game.total} events · {game.rounds.length} rounds
+                        <span class="tree-chevron">{isOpen(gameKey) ? '▲' : '▼'}</span>
+                    </div>
+                </button>
+
+                {#if isOpen(gameKey)}
+                    <div class="game-body">
+                        {#each game.rounds as roundSection, ri}
+                            {@const roundKey = 'r-' + game.matchName + '-' + roundSection.round}
+
+                            <!-- ── Round section ───────────────────── -->
+                            <div class="round-section" class:last={ri === game.rounds.length - 1}>
+                                <button class="round-header" onclick={() => toggle(roundKey)}>
+                                    <span class="round-label">Round {roundSection.round}</span>
+                                    <span class="small muted">
+                                        {roundSection.total} event{roundSection.total !== 1 ? 's' : ''}
+                                        <span class="tree-chevron">{isOpen(roundKey) ? '▲' : '▼'}</span>
+                                    </span>
+                                </button>
+
+                                {#if isOpen(roundKey)}
+                                    <div class="round-clusters">
+                                        {#each roundSection.clusters as cluster, ci}
+                                            <!-- ── Incident cluster (within 100 ticks) ── -->
+                                            <div class="event-list" class:cluster-gap={ci > 0}>
+                                                {#each cluster.events as ev, i}
+                                                    <div class="event-row">
+                                                        <div class="event-gutter">
+                                                            <div class="event-dot" style="background:{severityColor[ev.Severity]??'var(--color-accent)'}"></div>
+                                                            {#if i < cluster.events.length - 1}
+                                                                <div class="event-connector"></div>
+                                                            {/if}
+                                                        </div>
+                                                        <div class="event-content">
+                                                            <div class="event-row-head">
+                                                                <span class="event-type">{ev.Type}</span>
+                                                                <span class="mono muted" style="font-size:0.7rem">T{ev.Tick}</span>
+                                                                <button class="ev-copy chip" onclick={(e) => copytick(ev.Tick, e.currentTarget)}>copy</button>
+                                                            </div>
+                                                            <p class="event-desc">{ev.Description}</p>
+
+                                                            {#if ev.Type === "Gunfight" && ev.meta}
+                                                                {@const gfKey = `gf-${ev.Round}-${ev.Tick}`}
+                                                                <button class="chip cluster-toggle" onclick={() => toggleDuel(gfKey)}>
+                                                                    {isOpen(gfKey, false) ? '▲ Hide' : '▼ Duel details'}
+                                                                </button>
+                                                                {#if isOpen(gfKey, false)}
+                                                                    <div class="duel-timeline">
+                                                                        <div class="timeline-row"><span class="t-time">0ms</span><span>Spotted</span></div>
+                                                                        {#if ev.meta.target_shot_ms > 0}<div class="timeline-row you"><span class="t-time">{Math.round(ev.meta.target_shot_ms)}ms</span><span>You fired</span></div>{/if}
+                                                                        {#if ev.meta.enemy_shot_ms > 0}<div class="timeline-row enemy"><span class="t-time">{Math.round(ev.meta.enemy_shot_ms)}ms</span><span>Enemy fired</span></div>{/if}
+                                                                        {#if ev.meta.target_ttd_ms > 0}<div class="timeline-row you bold"><span class="t-time">{Math.round(ev.meta.target_ttd_ms)}ms</span><span>You dealt damage</span></div>{/if}
+                                                                        {#if ev.meta.enemy_ttd_ms > 0}<div class="timeline-row enemy bold"><span class="t-time">{Math.round(ev.meta.enemy_ttd_ms)}ms</span><span>Enemy dealt damage</span></div>{/if}
+                                                                        {#if ev.meta.crosshair_pitch > 0}<div class="timeline-note">Crosshair {ev.meta.crosshair_pitch.toFixed(1)}° {ev.meta.crosshair_dir} at duel start</div>{/if}
+                                                                        {#if ev.meta.first_bullet_acc > 0}<div class="timeline-note">First bullet {ev.meta.first_bullet_acc.toFixed(1)}° off head ({ev.meta.was_peeking ? 'Peeking' : 'Holding'})</div>{/if}
+                                                                    </div>
+                                                                {/if}
+                                                            {/if}
+                                                        </div>
+                                                    </div>
+                                                {/each}
+                                            </div>
+                                        {/each}
+                                    </div>
+                                {/if}
+                            </div>
                         {/each}
-                    </select>
-                </label>
-            {/if}
-        </div>
-        {#each groupInsights(visibleInsights()) as group}
-            <div class="event-group card">
-                <!-- Context header -->
-                <div class="event-group-header row-between">
-                    <span class="small muted">{group.mapName || 'Unknown map'} · {group.matchDisplay || ''}</span>
-                    <strong class="mono">Round {group.round}</strong>
-                </div>
+                    </div>
+                {/if}
 
-                <!-- Vertical event list -->
-                <div class="event-list">
-                    {#each group.events as ev, i}
-                        <div class="event-row">
-                            <!-- Gutter: dot + connecting line -->
-                            <div class="event-gutter">
-                                <div class="event-dot" style="background: {severityColor[ev.Severity] ?? 'var(--color-accent)'}"></div>
-                                {#if i < group.events.length - 1}
-                                    <div class="event-connector"></div>
-                                {/if}
-                            </div>
-
-                            <!-- Content -->
-                            <div class="event-content">
-                                <div class="event-row-head">
-                                    <span class="event-type">{ev.Type}</span>
-                                    <span class="mono muted" style="font-size:0.7rem">T{ev.Tick}</span>
-                                    <button class="ev-copy chip" onclick={(e) => copytick(ev.Tick, e.currentTarget)}>copy</button>
-                                </div>
-                                <p class="event-desc">{ev.Description}</p>
-
-                                {#if ev.Type === "Gunfight" && ev.meta}
-                                    {@const gfKey = `gf-${ev.Round}-${ev.Tick}`}
-                                    <button class="chip cluster-toggle" onclick={() => toggleDuel(gfKey)}>
-                                        {openKeys[gfKey] ? '▲ Hide' : '▼ Duel details'}
-                                    </button>
-                                    {#if openKeys[gfKey]}
-                                        <div class="duel-timeline">
-                                            <div class="timeline-row"><span class="t-time">0ms</span><span>Spotted</span></div>
-                                            {#if ev.meta.target_shot_ms > 0}
-                                                <div class="timeline-row you"><span class="t-time">{Math.round(ev.meta.target_shot_ms)}ms</span><span>You fired</span></div>
-                                            {/if}
-                                            {#if ev.meta.enemy_shot_ms > 0}
-                                                <div class="timeline-row enemy"><span class="t-time">{Math.round(ev.meta.enemy_shot_ms)}ms</span><span>Enemy fired</span></div>
-                                            {/if}
-                                            {#if ev.meta.target_ttd_ms > 0}
-                                                <div class="timeline-row you bold"><span class="t-time">{Math.round(ev.meta.target_ttd_ms)}ms</span><span>You dealt damage</span></div>
-                                            {/if}
-                                            {#if ev.meta.enemy_ttd_ms > 0}
-                                                <div class="timeline-row enemy bold"><span class="t-time">{Math.round(ev.meta.enemy_ttd_ms)}ms</span><span>Enemy dealt damage</span></div>
-                                            {/if}
-                                            {#if ev.meta.crosshair_pitch > 0}
-                                                <div class="timeline-note">Crosshair {ev.meta.crosshair_pitch.toFixed(1)}° {ev.meta.crosshair_dir} at duel start</div>
-                                            {/if}
-                                            {#if ev.meta.first_bullet_acc > 0}
-                                                <div class="timeline-note">First bullet {ev.meta.first_bullet_acc.toFixed(1)}° off head ({ev.meta.was_peeking ? 'Peeking' : 'Holding'})</div>
-                                            {/if}
-                                        </div>
-                                    {/if}
-                                {/if}
-                            </div>
-                        </div>
-                    {/each}
-                </div>
             </div>
         {/each}
     {/if}
@@ -381,30 +405,103 @@
         color: var(--color-danger);
     }
 
-    /* ---- Incident toolbar ---- */
-    .incident-toolbar {
-        align-items: end;
-        gap: var(--space-4);
-    }
-
-    .game-filter {
-        min-width: min(24rem, 100%);
-    }
-
-    .game-filter select {
-        margin-bottom: 0;
-    }
-
-    /* ---- Event group card ---- */
-    .event-group {
+    /* ── Game card (top level) ───────────────────────────────────────── */
+    .game-card {
         padding: 0;
         overflow: hidden;
     }
 
-    .event-group-header {
-        padding: var(--space-2) var(--space-4);
-        border-bottom: 1px solid var(--color-border);
+    .game-header {
+        display: flex;
+        justify-content: space-between;
+        align-items: center;
+        gap: var(--space-3);
+        width: 100%;
+        padding: var(--space-3) var(--space-4);
         background: var(--color-surface-2);
+        border: none;
+        border-bottom: 1px solid var(--color-border);
+        cursor: pointer;
+        text-align: left;
+        color: var(--color-text);
+        font: inherit;
+    }
+
+    .game-header:hover {
+        background: color-mix(in srgb, var(--color-accent) 6%, var(--color-surface-2));
+    }
+
+    .game-title {
+        display: flex;
+        flex-direction: column;
+        gap: 0.1rem;
+    }
+
+    .game-meta {
+        display: flex;
+        align-items: center;
+        gap: var(--space-2);
+        white-space: nowrap;
+        flex-shrink: 0;
+    }
+
+    /* ── Round section ───────────────────────────────────────────────── */
+    .game-body {
+        display: flex;
+        flex-direction: column;
+    }
+
+    .round-section {
+        border-bottom: 1px solid var(--color-border);
+    }
+
+    .round-section.last {
+        border-bottom: none;
+    }
+
+    .round-header {
+        display: flex;
+        justify-content: space-between;
+        align-items: center;
+        width: 100%;
+        padding: var(--space-2) var(--space-4) var(--space-2) var(--space-5);
+        background: transparent;
+        border: none;
+        cursor: pointer;
+        text-align: left;
+        color: var(--color-text-muted);
+        font: inherit;
+        font-size: 0.82rem;
+    }
+
+    .round-header:hover {
+        color: var(--color-text);
+        background: color-mix(in srgb, var(--color-accent) 4%, transparent);
+    }
+
+    .round-label {
+        font-weight: 600;
+        font-size: 0.8rem;
+        text-transform: uppercase;
+        letter-spacing: 0.04em;
+    }
+
+    .round-clusters {
+        padding: var(--space-2) var(--space-4) var(--space-3) var(--space-6);
+        display: flex;
+        flex-direction: column;
+        gap: 0;
+    }
+
+    .cluster-gap {
+        margin-top: var(--space-3);
+        padding-top: var(--space-3);
+        border-top: 1px dashed var(--color-border);
+    }
+
+    .tree-chevron {
+        font-size: 0.65rem;
+        opacity: 0.6;
     }
 
     .event-list {
