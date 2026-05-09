@@ -7,6 +7,7 @@ import (
 	"strings"
 
 	"cs-insights/internal/parser"
+	"github.com/golang/geo/r3"
 	"github.com/markus-wa/demoinfocs-golang/v5/pkg/demoinfocs/common"
 	events "github.com/markus-wa/demoinfocs-golang/v5/pkg/demoinfocs/events"
 )
@@ -64,9 +65,10 @@ type GunfightMetadata struct {
 }
 
 type GunfightAnalyzer struct {
-	targetPlayer string
-	insights     []parser.InsightData
-	activeDuels  map[int]*Gunfight
+	targetPlayer    string
+	insights        []parser.InsightData
+	activeDuels     map[int]*Gunfight
+	positionHistory []r3.Vector
 }
 
 func NewGunfightAnalyzer(targetPlayer string) *GunfightAnalyzer {
@@ -122,12 +124,19 @@ func (a *GunfightAnalyzer) OnEvent(event interface{}, state *parser.GameState) {
 					duel.TargetFirstBulletAccuracy = math.Sqrt(pDiff*pDiff + yDiff*yDiff)
 				}
 
-				// Check if holding or peeking (based on 2D velocity at shot time)
-				// We don't have historical positions easily accessible here without state tracking,
-				// so for simplicity in V1 of this feature, we will estimate based on view movement
-				// or just tag it based on general movement.
-				// For now, let's just log the accuracy without the stance since Velocity() is not available in v5.
-				duel.TargetWasPeeking = false
+				// Check if holding or peeking based on position history
+				var maxDist float64
+				currPos := e.Shooter.Position()
+				for _, pos := range a.positionHistory {
+					distX := currPos.X - pos.X
+					distY := currPos.Y - pos.Y
+					dist := math.Sqrt(float64(distX*distX + distY*distY))
+					if dist > maxDist {
+						maxDist = dist
+					}
+				}
+				// If they moved more than 40 units in the last 1 second (~64 ticks), they are peeking/dancing
+				duel.TargetWasPeeking = maxDist > 40.0
 			}
 		} else if closestEnemy.Name == a.targetPlayer {
 			duel := a.getOrCreateDuel(state, e.Shooter)
@@ -189,7 +198,13 @@ func (a *GunfightAnalyzer) OnTickDone(state *parser.GameState) {
 		for id := range a.activeDuels {
 			delete(a.activeDuels, id)
 		}
+		a.positionHistory = nil
 		return
+	}
+
+	a.positionHistory = append(a.positionHistory, targetPlayer.Position())
+	if len(a.positionHistory) > 64 {
+		a.positionHistory = a.positionHistory[1:]
 	}
 
 	// Update active duels or start new ones based on FOV
