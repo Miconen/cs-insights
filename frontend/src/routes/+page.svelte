@@ -241,6 +241,23 @@
         return typeof value === 'number' && Number.isFinite(value);
     }
 
+    function meaningfulDegrees(value: unknown): value is number {
+        return isNumber(value) && value > 0.05;
+    }
+
+    function hasAimData(meta: any) {
+        return meta?.timing_confidence !== 'low' && (
+            meaningfulDegrees(meta.initial_aim_offset) ||
+            meaningfulDegrees(meta.crosshair_pitch) ||
+            meaningfulDegrees(meta.first_bullet_acc) ||
+            meaningfulDegrees(meta.adjustment_needed)
+        );
+    }
+
+    function compactTagClass(tag: string) {
+        return tag.includes('Confidence') ? 'chip warn-chip' : 'chip soft-chip';
+    }
+
     function splitAdvice(item: string) {
         const idx = item.indexOf(':');
         if (idx === -1) return { title: '', body: item };
@@ -248,9 +265,9 @@
     }
 
     function duelTimelineEvents(meta: any) {
-        const events: { ms: number; label: string; type: string; bold: boolean }[] = [];
+        const events: { ms: number; label: string; type: string; bold: boolean; key: string }[] = [];
         const add = (ms: any, label: string, type = 'spotted', bold = false) => {
-            if (typeof ms === 'number' && ms >= 0) events.push({ ms, label, type, bold });
+            if (typeof ms === 'number' && ms >= 0) events.push({ ms, label, type, bold, key: `${label}-${type}-${ms}` });
         };
 
         add(meta.target_seen_ms, 'Enemy entered your angle');
@@ -446,6 +463,9 @@
                                                         <div class="event-row-head">
                                                             <span class="event-type">{ev.Type}</span>
                                                             <span class="mono muted" style="font-size:0.7rem">T{ev.Tick}</span>
+                                                            {#if gunfightOutcome(ev)}
+                                                                <span class="outcome-pill {gunfightOutcome(ev)}">{gunfightOutcome(ev)}</span>
+                                                            {/if}
                                                             <button class="ev-copy chip" onclick={(e) => copytick(ev.Tick, e.currentTarget)}>copy</button>
                                                         </div>
                                                         <p class="event-desc">{ev.Description}</p>
@@ -468,7 +488,7 @@
                                                                             {/if}
                                                                             {#if ev.meta.tags}
                                                                                 {#each ev.meta.tags as tag}
-                                                                                    <span class="chip" style="border-style: dashed;">{tag}</span>
+                                                                                    <span class={compactTagClass(tag)}>{tag}</span>
                                                                                 {/each}
                                                                             {/if}
                                                                         </div>
@@ -490,17 +510,24 @@
                                                                         {#if isNumber(ev.meta.enemy_movement_dist)}<span>Enemy move <strong>{ev.meta.enemy_movement_dist.toFixed(0)}u</strong></span>{/if}
                                                                     </div>
                                                                     
-                                                                    {#each duelTimelineEvents(ev.meta) as tEv}
-                                                                        <div class="timeline-row {tEv.type} {tEv.bold ? 'bold' : ''}">
-                                                                            <span class="t-time">{Math.round(tEv.ms)}ms</span>
-                                                                            <span>{tEv.label}</span>
-                                                                        </div>
-                                                                    {/each}
+                                                                    <div class="combat-timeline">
+                                                                        {#each duelTimelineEvents(ev.meta) as tEv (tEv.key)}
+                                                                            <div class="combat-step {tEv.type} {tEv.bold ? 'bold' : ''}">
+                                                                                <span class="step-dot"></span>
+                                                                                <span class="step-time">{Math.round(tEv.ms)}ms</span>
+                                                                                <span class="step-label">{tEv.label}</span>
+                                                                            </div>
+                                                                        {/each}
+                                                                    </div>
                                                                     
-                                                                    {#if isNumber(ev.meta.initial_aim_offset)}<div class="timeline-note">Initial aim {ev.meta.initial_aim_offset.toFixed(1)}° off head</div>{/if}
-                                                                    {#if isNumber(ev.meta.crosshair_pitch)}<div class="timeline-note">Crosshair height {ev.meta.crosshair_pitch.toFixed(1)}° {ev.meta.crosshair_dir || 'from head'} at contact</div>{/if}
-                                                                    {#if isNumber(ev.meta.first_bullet_acc)}<div class="timeline-note">First bullet {ev.meta.first_bullet_acc.toFixed(1)}° off head ({ev.meta.was_peeking ? 'Peeking' : 'Holding'})</div>{/if}
-                                                                    {#if isNumber(ev.meta.adjustment_needed)}<div class="timeline-note">Aim adjustment {ev.meta.adjustment_needed.toFixed(1)}° before first shot</div>{/if}
+                                                                    {#if hasAimData(ev.meta)}
+                                                                        <div class="aim-notes">
+                                                                            {#if meaningfulDegrees(ev.meta.initial_aim_offset)}<span>Initial aim <strong>{ev.meta.initial_aim_offset.toFixed(1)}°</strong> off</span>{/if}
+                                                                            {#if meaningfulDegrees(ev.meta.crosshair_pitch)}<span>Height <strong>{ev.meta.crosshair_pitch.toFixed(1)}°</strong> {ev.meta.crosshair_dir || 'from head'}</span>{/if}
+                                                                            {#if meaningfulDegrees(ev.meta.first_bullet_acc)}<span>First bullet <strong>{ev.meta.first_bullet_acc.toFixed(1)}°</strong> off</span>{/if}
+                                                                            {#if meaningfulDegrees(ev.meta.adjustment_needed)}<span>Adjusted <strong>{ev.meta.adjustment_needed.toFixed(1)}°</strong></span>{/if}
+                                                                        </div>
+                                                                    {/if}
                                                                 </div>
                                                             {/if}
                                                         {/if}
@@ -770,16 +797,6 @@
         gap: var(--space-3);
         min-width: 0;
         border-radius: var(--radius-sm);
-        border-left: 2px solid transparent;
-        padding-left: var(--space-2);
-    }
-
-    .event-row.won {
-        border-left-color: var(--color-accent);
-    }
-
-    .event-row.lost {
-        border-left-color: var(--color-danger);
     }
 
     /* Left gutter: dot + vertical line */
@@ -834,6 +851,31 @@
         letter-spacing: 0.04em;
     }
 
+    .outcome-pill {
+        border-radius: 999px;
+        font-size: 0.66rem;
+        font-weight: 750;
+        letter-spacing: 0.05em;
+        line-height: 1;
+        padding: 0.2rem 0.42rem;
+        text-transform: uppercase;
+    }
+
+    .outcome-pill.won {
+        background: color-mix(in srgb, var(--color-success) 18%, transparent);
+        color: var(--color-success);
+    }
+
+    .outcome-pill.lost {
+        background: color-mix(in srgb, var(--color-danger) 18%, transparent);
+        color: var(--color-danger);
+    }
+
+    .outcome-pill.reset {
+        background: color-mix(in srgb, var(--color-warning) 18%, transparent);
+        color: var(--color-warning);
+    }
+
     .ev-copy {
         font-size: 0.68rem;
         padding: 0.08rem 0.35rem;
@@ -863,30 +905,70 @@
     .duel-timeline {
         background: var(--color-surface-2);
         border-radius: var(--radius-sm);
-        padding: var(--space-2) var(--space-3);
+        padding: var(--space-3);
         display: flex;
         flex-direction: column;
-        gap: 0.2rem;
+        gap: var(--space-2);
         margin-top: var(--space-1);
     }
 
-    .timeline-row {
-        display: flex;
+    .combat-timeline {
+        position: relative;
+        display: grid;
+        gap: 0.1rem;
+        padding-left: 0.25rem;
+    }
+
+    .combat-step {
+        position: relative;
+        display: grid;
+        grid-template-columns: 0.8rem 7ch 1fr;
+        align-items: center;
         gap: var(--space-2);
         font-family: var(--font-mono);
         font-size: 0.76rem;
         color: var(--color-text-muted);
+        min-height: 1.35rem;
     }
 
-    .timeline-row.you { color: var(--color-accent); }
-    .timeline-row.enemy { color: var(--color-danger); }
-    .timeline-row.bold { font-weight: 600; }
+    .combat-step::before {
+        content: '';
+        position: absolute;
+        left: 0.32rem;
+        top: -0.45rem;
+        bottom: 0.85rem;
+        width: 1px;
+        background: var(--color-border);
+    }
 
-    .t-time {
-        width: 7ch;
-        flex-shrink: 0;
+    .combat-step:first-child::before {
+        display: none;
+    }
+
+    .step-dot {
+        position: relative;
+        z-index: 1;
+        width: 0.45rem;
+        height: 0.45rem;
+        border-radius: 999px;
+        background: var(--color-text-muted);
+    }
+
+    .combat-step.you { color: var(--color-accent); }
+    .combat-step.enemy { color: var(--color-danger); }
+    .combat-step.bold { font-weight: 650; }
+
+    .combat-step.you .step-dot { background: var(--color-accent); }
+    .combat-step.enemy .step-dot { background: var(--color-danger); }
+
+    .step-time {
         text-align: right;
         white-space: nowrap;
+    }
+
+    .step-label {
+        font-family: var(--font-body);
+        letter-spacing: 0;
     }
 
     .timeline-analysis {
@@ -915,18 +997,35 @@
         color: var(--color-text);
     }
 
+    .soft-chip,
+    .warn-chip {
+        border-style: dashed;
+    }
+
+    .warn-chip {
+        color: var(--color-warning);
+        border-color: color-mix(in srgb, var(--color-warning) 45%, var(--color-border));
+        background: color-mix(in srgb, var(--color-warning) 8%, transparent);
+    }
+
     .timeline-divider {
         border: none;
         border-top: 1px solid var(--color-border);
         margin: var(--space-1) 0;
     }
 
-    .timeline-note {
+    .aim-notes {
+        display: flex;
+        flex-wrap: wrap;
+        gap: var(--space-1) var(--space-2);
         font-size: 0.74rem;
         color: var(--color-text-muted);
-        margin-top: 0.2rem;
         border-top: 1px solid var(--color-border);
-        padding-top: 0.2rem;
+        padding-top: var(--space-2);
+    }
+
+    .aim-notes strong {
+        color: var(--color-text);
     }
 
     @media (max-width: 639px) {
