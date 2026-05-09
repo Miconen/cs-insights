@@ -192,6 +192,9 @@ func mergeMatchMetadata(existing string, additions map[string]interface{}) strin
 }
 
 func (e *Engine) notifyEvent(event interface{}) {
+	if e.state.Parser != nil {
+		e.state.CurrentTick = e.state.Parser.CurrentFrame()
+	}
 	for _, a := range e.analyzers {
 		a.OnEvent(event, e.state)
 	}
