@@ -1,7 +1,7 @@
 <script lang="ts">
-    import { onMount } from 'svelte';
+    import { onDestroy, onMount } from 'svelte';
     import { page } from '$app/stores';
-    import { pushState, replaceState } from '$app/navigation';
+    import { afterNavigate, goto } from '$app/navigation';
     import Chart from 'chart.js/auto';
 
     const initialPlayer = $page.url.searchParams.get('player') || '';
@@ -13,17 +13,20 @@
     let chartCanvas: HTMLCanvasElement;
     let chartInstance: any;
     let activeEventTypes: string[] = [];
+    let lastFetchedPlayer = '';
+
+    const api = (path: string) => path;
+
     async function fetchData() {
         if (!playerName) return;
         loading = true;
         error = '';
         try {
-            // Note: Make sure the Go backend is running on 8080
-            const res = await fetch(`http://localhost:8080/api/insights?player=${encodeURIComponent(playerName)}`);
+            const res = await fetch(api(`/api/insights?player=${encodeURIComponent(playerName)}`));
             if (!res.ok) throw new Error(await res.text() || 'Failed to fetch insights');
             data = await res.json();
-            
-            // Render chart after data is loaded
+            activeEventTypes = reconcileEventTypes(activeEventTypes, eventTypes(data.insights));
+            lastFetchedPlayer = playerName;
             setTimeout(renderChart, 0);
         } catch (e: any) {
             error = e.message;
@@ -33,14 +36,15 @@
     }
 
     function renderChart() {
-        if (!chartCanvas || !data || !data.summary.counts_by_type) return;
+        const counts = data?.summary?.counts_by_type;
+        if (!chartCanvas || !counts) return;
 
         if (chartInstance) {
             chartInstance.destroy();
         }
 
-        const labels = Object.keys(data.summary.counts_by_type);
-        const values = Object.values(data.summary.counts_by_type);
+        const labels = Object.keys(counts);
+        const values = Object.values(counts);
 
         chartInstance = new Chart(chartCanvas, {
             type: 'polarArea',
@@ -71,29 +75,46 @@
         });
     }
 
+    function destroyChart() {
+        if (chartInstance) {
+            chartInstance.destroy();
+            chartInstance = null;
+        }
+    }
+
+    function syncPlayerFromUrl() {
+        const urlPlayer = $page.url.searchParams.get('player') || '';
+        if (!urlPlayer) return;
+        if (urlPlayer === playerName && urlPlayer === lastFetchedPlayer) return;
+        playerName = urlPlayer;
+        searchInput = urlPlayer;
+        localStorage.setItem('cs-insights:last-player', urlPlayer);
+        fetchData();
+    }
+
     onMount(() => {
-        if (playerName) {
-            fetchData();
-            localStorage.setItem('cs-insights:last-player', playerName);
+        const urlPlayer = $page.url.searchParams.get('player') || '';
+        if (urlPlayer) {
+            syncPlayerFromUrl();
             return;
         }
 
         const rememberedPlayer = localStorage.getItem('cs-insights:last-player');
         if (rememberedPlayer) {
-            playerName = rememberedPlayer;
-            searchInput = rememberedPlayer;
-            replaceState(`?player=${encodeURIComponent(rememberedPlayer)}`, {});
-            fetchData();
+            goto(`?player=${encodeURIComponent(rememberedPlayer)}`, { replaceState: true, noScroll: true });
         }
     });
+
+    afterNavigate(() => {
+        syncPlayerFromUrl();
+    });
+
+    onDestroy(destroyChart);
 
     function handleSubmit(e: Event) {
         e.preventDefault();
         if (searchInput.trim()) {
-            playerName = searchInput.trim();
-            localStorage.setItem('cs-insights:last-player', playerName);
-            pushState(`?player=${encodeURIComponent(playerName)}`, {});
-            fetchData();
+            goto(`?player=${encodeURIComponent(searchInput.trim())}`);
         }
     }
 
@@ -158,6 +179,18 @@
         return [...new Set((insights || []).map((ins) => ins.Type))].sort();
     }
 
+    function eventTypeCounts(insights: any[]): Record<string, number> {
+        return (insights || []).reduce((acc, ins) => {
+            acc[ins.Type] = (acc[ins.Type] || 0) + 1;
+            return acc;
+        }, {} as Record<string, number>);
+    }
+
+    function reconcileEventTypes(selected: string[], available: string[]): string[] {
+        const availableSet = new Set(available);
+        return selected.filter((type) => availableSet.has(type));
+    }
+
     function visibleInsights(insights: any[]): any[] {
         if (!insights) return [];
         if (!activeEventTypes.length) return insights;
@@ -170,8 +203,14 @@
             : [...activeEventTypes, type];
     }
 
-    function insightDomId(ins: any): string {
-        const raw = `${ins.MatchName}-${ins.Round}-${ins.Tick}-${ins.Type}`;
+    function eventKey(ins: any, fallback = ''): string {
+        if (ins.ID) return `id-${ins.ID}`;
+        const metaKey = ins.meta?.outcome || ins.meta?.fight_type || ins.Severity || '';
+        return `${ins.MatchName}-${ins.Round}-${ins.Tick}-${ins.Type}-${metaKey}-${fallback}`;
+    }
+
+    function insightDomId(ins: any, fallback = ''): string {
+        const raw = eventKey(ins, fallback);
         return `event-${raw.replace(/[^a-zA-Z0-9_-]/g, '-')}`;
     }
 
@@ -186,11 +225,26 @@
         }, 0);
     }
 
-    function gunfightOutcome(ev: any): 'won' | 'lost' | '' {
+    function gunfightOutcome(ev: any): 'won' | 'lost' | 'reset' | '' {
         if (ev.Type !== 'Gunfight') return '';
+        const outcome = (ev.meta?.outcome || '').toLowerCase();
+        if (outcome === 'won') return 'won';
+        if (outcome === 'lost') return 'lost';
+        if (outcome === 'reset') return 'reset';
         if (ev.Description?.includes('(Won)')) return 'won';
         if (ev.Description?.includes('(Lost)')) return 'lost';
+        if (ev.Description?.includes('(Reset)')) return 'reset';
         return '';
+    }
+
+    function isNumber(value: unknown): value is number {
+        return typeof value === 'number' && Number.isFinite(value);
+    }
+
+    function splitAdvice(item: string) {
+        const idx = item.indexOf(':');
+        if (idx === -1) return { title: '', body: item };
+        return { title: item.slice(0, idx + 1), body: item.slice(idx + 1).trimStart() };
     }
 
     function duelTimelineEvents(meta: any) {
@@ -243,16 +297,6 @@
         Low:    'var(--color-accent)',
     };
 
-    function formatDate(value: string) {
-        if (!value) return 'Unknown date';
-        return new Intl.DateTimeFormat(undefined, {
-            year: 'numeric',
-            month: 'short',
-            day: '2-digit',
-            hour: '2-digit',
-            minute: '2-digit'
-        }).format(new Date(value));
-    }
 </script>
 
 <svelte:head>
@@ -283,7 +327,7 @@
             <h1 class="display">Performance Dashboard</h1>
             <p class="muted">Analysis for <mark>{playerName}</mark></p>
         </div>
-        <button class="chip" onclick={() => { playerName = ''; searchInput = ''; data = null; pushState('/', {}); }}>Back to Search</button>
+        <button class="chip" onclick={() => { localStorage.removeItem('cs-insights:last-player'); playerName = ''; searchInput = ''; data = null; activeEventTypes = []; destroyChart(); goto('/'); }}>Back to Search</button>
     </div>
 
     {#if loading}
@@ -306,9 +350,8 @@
                 {#if data.advice && data.advice.length > 0}
                     <ul>
                         {#each data.advice as item}
-                            <li>
-                                {@html item.replace(/^(.*?):/, '<strong>$1:</strong>')}
-                            </li>
+                            {@const advice = splitAdvice(item)}
+                            <li>{#if advice.title}<strong>{advice.title}</strong> {/if}{advice.body}</li>
                         {/each}
                     </ul>
                 {:else}
@@ -327,26 +370,34 @@
 
         <div class="section-heading">Event Log</div>
 
-        <div class="incident-toolbar">
-            <button class:active={!activeEventTypes.length} class="chip" onclick={() => activeEventTypes = []}>All</button>
+        {@const typeCounts = eventTypeCounts(data.insights)}
+        <div class="incident-toolbar" aria-label="Event type filters">
+            <button class:active={!activeEventTypes.length} class="chip" onclick={() => activeEventTypes = []}>All ({data.insights.length})</button>
             {#each eventTypes(data.insights) as type}
-                <button class:active={activeEventTypes.includes(type)} class="chip" onclick={() => toggleEventType(type)}>{type}</button>
+                <button class:active={activeEventTypes.includes(type)} class="chip" onclick={() => toggleEventType(type)}>{type} ({typeCounts[type] || 0})</button>
             {/each}
         </div>
 
         {@const filteredInsights = visibleInsights(data.insights)}
+        {#if filteredInsights.length === 0}
+            <div class="empty-state">
+                <p>No events match the selected filters.</p>
+                <button class="chip" onclick={() => activeEventTypes = []}>Clear filters</button>
+            </div>
+        {:else}
         <div class="event-navigator" aria-label="Event timeline navigator">
-            {#each [...filteredInsights].sort((a, b) => a.Round - b.Round || a.Tick - b.Tick) as navEvent}
+            {#each [...filteredInsights].sort((a, b) => a.Round - b.Round || a.Tick - b.Tick) as navEvent (eventKey(navEvent))}
                 <button
                     class="event-nav-dot {gunfightOutcome(navEvent)}"
                     style="background:{severityColor[navEvent.Severity]??'var(--color-accent)'}"
                     title={`Round ${navEvent.Round} · T${navEvent.Tick} · ${navEvent.Type}`}
+                    aria-label={`Go to round ${navEvent.Round}, tick ${navEvent.Tick}, ${navEvent.Type}${gunfightOutcome(navEvent) ? `, ${gunfightOutcome(navEvent)}` : ''}`}
                     onclick={() => scrollToInsight(navEvent)}
                 ></button>
             {/each}
         </div>
 
-        {#each buildTree(filteredInsights) as game, gi}
+        {#each buildTree(filteredInsights) as game, gi (game.matchName)}
             {@const gameKey = 'g-' + game.matchName}
             <div class="game-tree">
                 <!-- ── Game header ─────────────────────────────────── -->
@@ -361,7 +412,7 @@
 
                 {#if openKeys[gameKey] !== false}
                     <div class="game-children">
-                        {#each game.rounds as roundSection, ri}
+                        {#each game.rounds as roundSection, ri (roundSection.round)}
                             {@const roundKey = 'r-' + game.matchName + '-' + roundSection.round}
 
                             <!-- ── Round node ─────────────────────────────────── -->
@@ -383,8 +434,8 @@
                                 <div class="round-indent" class:last-round={ri === game.rounds.length - 1}>
                                     {#each roundSection.clusters as cluster, ci}
                                         <div class="event-list" class:cluster-gap={ci > 0}>
-                                            {#each cluster.events as ev, i}
-                                                <div id={insightDomId(ev)} class="event-row {gunfightOutcome(ev)}">
+                                            {#each cluster.events as ev, i (eventKey(ev, `${ci}-${i}`))}
+                                                <div id={insightDomId(ev, `${ci}-${i}`)} class="event-row {gunfightOutcome(ev)}">
                                                     <div class="event-gutter">
                                                         <div class="event-dot" style="background:{severityColor[ev.Severity]??'var(--color-accent)'}"></div>
                                                         {#if i < cluster.events.length - 1}
@@ -400,7 +451,7 @@
                                                         <p class="event-desc">{ev.Description}</p>
 
                                                         {#if ev.Type === "Gunfight" && ev.meta}
-                                                            {@const gfKey = `gf-${ev.Round}-${ev.Tick}-${i}`}
+                                                            {@const gfKey = `gf-${eventKey(ev, `${ci}-${i}`)}`}
                                                             <button class="chip cluster-toggle" onclick={() => toggleDuel(gfKey)}>
                                                                 {openKeys[gfKey] ? '▲ Hide' : '▼ Duel details'}
                                                             </button>
@@ -425,11 +476,19 @@
 
                                                                     {#if ev.meta.analysis}
                                                                         <div class="timeline-analysis">
-                                                                            <strong>Rating: {ev.meta.rating}/10</strong><br>
+                                                                            <strong>{isNumber(ev.meta.rating) ? `Rating: ${ev.meta.rating}/10` : 'Rating unavailable'}</strong><br>
                                                                             {ev.meta.analysis}
                                                                         </div>
                                                                         <hr class="timeline-divider">
                                                                     {/if}
+
+                                                                    <div class="duel-metrics">
+                                                                        {#if ev.meta.start_source}<span>Source <strong>{ev.meta.start_source}</strong></span>{/if}
+                                                                        {#if isNumber(ev.meta.target_damage)}<span>You <strong>{ev.meta.target_damage}</strong> dmg</span>{/if}
+                                                                        {#if isNumber(ev.meta.enemy_damage)}<span>Enemy <strong>{ev.meta.enemy_damage}</strong> dmg</span>{/if}
+                                                                        {#if isNumber(ev.meta.target_movement_dist)}<span>Your move <strong>{ev.meta.target_movement_dist.toFixed(0)}u</strong></span>{/if}
+                                                                        {#if isNumber(ev.meta.enemy_movement_dist)}<span>Enemy move <strong>{ev.meta.enemy_movement_dist.toFixed(0)}u</strong></span>{/if}
+                                                                    </div>
                                                                     
                                                                     {#each duelTimelineEvents(ev.meta) as tEv}
                                                                         <div class="timeline-row {tEv.type} {tEv.bold ? 'bold' : ''}">
@@ -438,8 +497,10 @@
                                                                         </div>
                                                                     {/each}
                                                                     
-                                                                    {#if ev.meta.crosshair_pitch > 0}<div class="timeline-note">Crosshair {ev.meta.crosshair_pitch.toFixed(1)}° {ev.meta.crosshair_dir} at duel start</div>{/if}
-                                                                    {#if ev.meta.first_bullet_acc > 0}<div class="timeline-note">First bullet {ev.meta.first_bullet_acc.toFixed(1)}° off head ({ev.meta.was_peeking ? 'Peeking' : 'Holding'})</div>{/if}
+                                                                    {#if isNumber(ev.meta.initial_aim_offset)}<div class="timeline-note">Initial aim {ev.meta.initial_aim_offset.toFixed(1)}° off head</div>{/if}
+                                                                    {#if isNumber(ev.meta.crosshair_pitch)}<div class="timeline-note">Crosshair height {ev.meta.crosshair_pitch.toFixed(1)}° {ev.meta.crosshair_dir || 'from head'} at contact</div>{/if}
+                                                                    {#if isNumber(ev.meta.first_bullet_acc)}<div class="timeline-note">First bullet {ev.meta.first_bullet_acc.toFixed(1)}° off head ({ev.meta.was_peeking ? 'Peeking' : 'Holding'})</div>{/if}
+                                                                    {#if isNumber(ev.meta.adjustment_needed)}<div class="timeline-note">Aim adjustment {ev.meta.adjustment_needed.toFixed(1)}° before first shot</div>{/if}
                                                                 </div>
                                                             {/if}
                                                         {/if}
@@ -456,6 +517,7 @@
                 {/if}
             </div>
         {/each}
+        {/if}
     {/if}
     </section>
 {/if}
@@ -530,11 +592,11 @@
 
     .event-navigator {
         position: sticky;
-        top: var(--space-2);
+        top: calc(3rem + var(--space-2));
         z-index: 5;
         display: flex;
         align-items: center;
-        gap: 0.22rem;
+        gap: 0.3rem;
         padding: var(--space-2) var(--space-3);
         overflow-x: auto;
         background: color-mix(in srgb, var(--color-surface) 86%, transparent);
@@ -544,10 +606,10 @@
     }
 
     .event-nav-dot {
-        width: 0.55rem;
-        height: 1.35rem;
+        width: 0.8rem;
+        height: 1.65rem;
         flex: 0 0 auto;
-        border: 0;
+        border: 1px solid color-mix(in srgb, var(--color-text) 18%, transparent);
         border-radius: 999px;
         cursor: pointer;
         opacity: 0.72;
@@ -564,6 +626,11 @@
 
     .event-nav-dot.lost {
         box-shadow: 0 0 0 1px color-mix(in srgb, var(--color-danger) 75%, transparent);
+    }
+
+    .event-nav-dot.reset {
+        border-radius: var(--radius-sm);
+        box-shadow: 0 0 0 1px color-mix(in srgb, var(--color-warning) 75%, transparent);
     }
 
     /* ── Outer tree: game → round ────────────────────────────────────── */
@@ -827,6 +894,25 @@
         color: var(--color-text);
         line-height: 1.4;
         margin-bottom: var(--space-1);
+    }
+
+    .duel-metrics {
+        display: flex;
+        flex-wrap: wrap;
+        gap: var(--space-1) var(--space-2);
+        color: var(--color-text-muted);
+        font-size: 0.74rem;
+    }
+
+    .duel-metrics span {
+        background: color-mix(in srgb, var(--color-surface) 55%, transparent);
+        border: 1px solid var(--color-border);
+        border-radius: var(--radius-sm);
+        padding: 0.1rem 0.35rem;
+    }
+
+    .duel-metrics strong {
+        color: var(--color-text);
     }
 
     .timeline-divider {
