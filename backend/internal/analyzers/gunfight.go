@@ -319,6 +319,9 @@ func (a *GunfightAnalyzer) OnTickDone(state *parser.GameState) {
 			}
 			duel.LastSeenTick = state.CurrentTick
 		} else {
+			if !exists {
+				continue
+			}
 			lastActivityTick := duel.LastSeenTick
 			if duel.LastCombatTick > lastActivityTick {
 				lastActivityTick = duel.LastCombatTick
