@@ -1,7 +1,7 @@
 <script lang="ts">
     import { onMount } from 'svelte';
     import { page } from '$app/stores';
-    import { replaceState, pushState } from '$app/navigation';
+    import { pushState, replaceState } from '$app/navigation';
     import Chart from 'chart.js/auto';
 
     const initialPlayer = $page.url.searchParams.get('player') || '';
@@ -158,9 +158,12 @@
     // Gunfight timeline keys use gfKey prefix and are closed by default (=== true).
     let openKeys: Record<string, boolean> = {};
 
+    function isOpen(key: string, defaultOpen = true): boolean {
+        return defaultOpen ? openKeys[key] !== false : openKeys[key] === true;
+    }
+
     function toggle(key: string, defaultOpen = true) {
-        const currentlyOpen = defaultOpen ? openKeys[key] !== false : openKeys[key] === true;
-        openKeys = { ...openKeys, [key]: !currentlyOpen };
+        openKeys = { ...openKeys, [key]: !isOpen(key, defaultOpen) };
     }
 
     function toggleDuel(gfKey: string) { toggle(gfKey, false); }

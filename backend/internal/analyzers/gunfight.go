@@ -349,7 +349,7 @@ func (a *GunfightAnalyzer) resolveDuel(state *parser.GameState, duel *Gunfight, 
 		} else {
 			severity = "Low"
 		}
-		desc = fmt.Sprintf("Duel lost vs %s", duel.EnemyName)
+		desc = fmt.Sprintf("Duel vs %s (Lost)", duel.EnemyName)
 	} else {
 		// If you won, but the rating was poor (e.g. you got lucky)
 		if rating <= 4 {
