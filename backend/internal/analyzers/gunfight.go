@@ -119,7 +119,7 @@ func (a *GunfightAnalyzer) OnEvent(event interface{}, state *parser.GameState) {
 					if yDiff > 180 {
 						yDiff = 360 - yDiff
 					}
-					duel.TargetFirstBulletAccuracy = pDiff + yDiff
+					duel.TargetFirstBulletAccuracy = math.Sqrt(pDiff*pDiff + yDiff*yDiff)
 				}
 
 				// Check if holding or peeking (based on 2D velocity at shot time)
@@ -303,7 +303,7 @@ func (a *GunfightAnalyzer) resolveDuel(state *parser.GameState, duel *Gunfight, 
 	}
 	tickToMs := func(t int) float64 {
 		if t == 0 {
-			return 0
+			return -1
 		}
 		return float64(t-duel.StartTick) * (1000.0 / tickRate)
 	}
@@ -370,65 +370,68 @@ func (a *GunfightAnalyzer) resolveDuel(state *parser.GameState, duel *Gunfight, 
 func evaluateDuel(duel *Gunfight, meta GunfightMetadata, won bool) (int, string) {
 	rating := 5
 	analysis := ""
+	var details []string
 
 	if won {
 		rating += 2
+		details = append(details, "+2 You won the duel.")
 		if meta.TargetTTDMs > 0 && meta.TargetTTDMs < 300 {
 			rating += 2 // Fast kill
-			analysis += fmt.Sprintf("Excellent TTK (%.0fms). ", meta.TargetTTDMs)
+			details = append(details, fmt.Sprintf("+2 Excellent TTK (%.0fms).", meta.TargetTTDMs))
 		} else if meta.TargetDamage >= 100 {
-			analysis += "Solid kill. "
+			details = append(details, "Solid kill.")
 		}
 
 		if meta.TargetStartHP < meta.EnemyStartHP-20 {
 			rating += 2 // Won at a disadvantage
-			analysis += "Great job winning at a health disadvantage! "
+			details = append(details, "+2 Great job winning at a health disadvantage!")
 		}
 
 		if meta.EnemyDamage >= 80 {
 			rating -= 2 // Barely survived
-			analysis += "You barely survived this duel. "
+			details = append(details, "-2 You barely survived this duel.")
 		}
 	} else {
 		if meta.TargetDamage == 0 {
 			rating -= 3 // Whiffed or instakilled
 			if meta.TargetShotMs > 0 && meta.TargetShotMs < meta.EnemyShotMs {
-				analysis += "You shot first but whiffed completely, dealing 0 damage while they killed you. "
+				details = append(details, "-3 You shot first but whiffed completely, dealing 0 damage while they killed you.")
 			} else if meta.TargetShotMs == 0 {
-				analysis += "You were killed before you could even fire a shot. "
+				details = append(details, "-3 You were killed before you could even fire a shot.")
 			} else {
-				analysis += "You dealt 0 damage in this fight. "
+				details = append(details, "-3 You dealt 0 damage in this fight.")
 			}
 		} else if meta.TargetDamage >= 80 {
 			rating += 2 // Close fight
-			analysis += fmt.Sprintf("Very close fight! You dealt heavy damage (%d in %d hits). ", meta.TargetDamage, meta.TargetHits)
+			msg := fmt.Sprintf("+2 Very close fight! You dealt heavy damage (%d in %d hits).", meta.TargetDamage, meta.TargetHits)
 			if meta.TargetWeapon != "" && meta.EnemyWeapon != "" {
-				analysis += fmt.Sprintf("Lost the aim duel against %s with your %s. ", meta.EnemyWeapon, meta.TargetWeapon)
+				msg += fmt.Sprintf(" Lost the aim duel against %s with your %s.", meta.EnemyWeapon, meta.TargetWeapon)
 			}
+			details = append(details, msg)
 		} else {
 			rating -= 1
-			analysis += fmt.Sprintf("You traded some damage (%d in %d hits). ", meta.TargetDamage, meta.TargetHits)
+			details = append(details, fmt.Sprintf("-1 You traded some damage (%d in %d hits).", meta.TargetDamage, meta.TargetHits))
 		}
 
 		if meta.TargetStartHP <= 20 {
 			rating += 2 // Was basically unwinnable
-			analysis += fmt.Sprintf("You started the duel at critical health (%d HP), making this an extremely hard fight to win. ", meta.TargetStartHP)
+			details = append(details, fmt.Sprintf("+2 You started the duel at critical health (%d HP), making this an extremely hard fight to win.", meta.TargetStartHP))
 		} else if meta.TargetStartHP > 80 && meta.EnemyStartHP <= 30 && meta.TargetDamage == 0 {
 			rating -= 3 // Choked an easy kill
-			analysis += "You had a massive health advantage but choked the kill. "
+			details = append(details, "-3 You had a massive health advantage but choked the kill.")
 		}
 
 		if meta.TargetShotMs > 0 && meta.EnemyShotMs > 0 {
 			if meta.TargetShotMs > meta.EnemyShotMs+100 {
 				rating -= 1
-				analysis += fmt.Sprintf("Your slow reaction time (fired %.0fms after enemy) cost you the duel. ", meta.TargetShotMs-meta.EnemyShotMs)
+				details = append(details, fmt.Sprintf("-1 Your slow reaction time (fired %.0fms after enemy) cost you the duel.", meta.TargetShotMs-meta.EnemyShotMs))
 			}
 		}
 	}
 
 	if meta.FirstBulletAcc > 5.0 {
 		rating -= 1
-		analysis += "Your first bullet accuracy was poor (>5° off). "
+		details = append(details, "-1 Your first bullet accuracy was poor (>5° off).")
 	}
 
 	if rating < 1 {
@@ -436,6 +439,8 @@ func evaluateDuel(duel *Gunfight, meta GunfightMetadata, won bool) (int, string)
 	} else if rating > 10 {
 		rating = 10
 	}
+	
+	analysis = strings.Join(details, " ")
 
 	return rating, strings.TrimSpace(analysis)
 }

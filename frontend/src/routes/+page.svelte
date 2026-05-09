@@ -221,7 +221,7 @@
             <h1 class="display">Performance Dashboard</h1>
             <p class="muted">Analysis for <mark>{playerName}</mark></p>
         </div>
-        <button class="chip" onclick={() => { playerName = ''; searchInput = ''; data = null; selectedMatch = 'all'; pushState('/', {}); }}>Back to Search</button>
+        <button class="chip" onclick={() => { playerName = ''; searchInput = ''; data = null; pushState('/', {}); }}>Back to Search</button>
     </div>
 
     {#if loading}
@@ -319,7 +319,7 @@
                                                         <p class="event-desc">{ev.Description}</p>
 
                                                         {#if ev.Type === "Gunfight" && ev.meta}
-                                                            {@const gfKey = `gf-${ev.Round}-${ev.Tick}`}
+                                                            {@const gfKey = `gf-${ev.Round}-${ev.Tick}-${i}`}
                                                             <button class="chip cluster-toggle" onclick={() => toggleDuel(gfKey)}>
                                                                 {openKeys[gfKey] ? '▲ Hide' : '▼ Duel details'}
                                                             </button>
@@ -332,11 +332,20 @@
                                                                         </div>
                                                                         <hr class="timeline-divider">
                                                                     {/if}
-                                                                    <div class="timeline-row"><span class="t-time">0ms</span><span>Spotted</span></div>
-                                                                    {#if ev.meta.target_shot_ms > 0}<div class="timeline-row you"><span class="t-time">{Math.round(ev.meta.target_shot_ms)}ms</span><span>You fired</span></div>{/if}
-                                                                    {#if ev.meta.enemy_shot_ms > 0}<div class="timeline-row enemy"><span class="t-time">{Math.round(ev.meta.enemy_shot_ms)}ms</span><span>Enemy fired</span></div>{/if}
-                                                                    {#if ev.meta.target_ttd_ms > 0}<div class="timeline-row you bold"><span class="t-time">{Math.round(ev.meta.target_ttd_ms)}ms</span><span>You dealt damage</span></div>{/if}
-                                                                    {#if ev.meta.enemy_ttd_ms > 0}<div class="timeline-row enemy bold"><span class="t-time">{Math.round(ev.meta.enemy_ttd_ms)}ms</span><span>Enemy dealt damage</span></div>{/if}
+                                                                    
+                                                                    {#each [
+                                                                        { ms: 0, label: 'Spotted', type: 'spotted', bold: false },
+                                                                        ev.meta.target_shot_ms >= 0 ? { ms: ev.meta.target_shot_ms, label: 'You fired', type: 'you', bold: false } : null,
+                                                                        ev.meta.enemy_shot_ms >= 0 ? { ms: ev.meta.enemy_shot_ms, label: 'Enemy fired', type: 'enemy', bold: false } : null,
+                                                                        ev.meta.target_ttd_ms >= 0 ? { ms: ev.meta.target_ttd_ms, label: 'You dealt damage', type: 'you', bold: true } : null,
+                                                                        ev.meta.enemy_ttd_ms >= 0 ? { ms: ev.meta.enemy_ttd_ms, label: 'Enemy dealt damage', type: 'enemy', bold: true } : null
+                                                                    ].filter((x) => x !== null).sort((a, b) => a!.ms - b!.ms) as tEv}
+                                                                        <div class="timeline-row {tEv!.type} {tEv!.bold ? 'bold' : ''}">
+                                                                            <span class="t-time">{Math.round(tEv!.ms)}ms</span>
+                                                                            <span>{tEv!.label}</span>
+                                                                        </div>
+                                                                    {/each}
+                                                                    
                                                                     {#if ev.meta.crosshair_pitch > 0}<div class="timeline-note">Crosshair {ev.meta.crosshair_pitch.toFixed(1)}° {ev.meta.crosshair_dir} at duel start</div>{/if}
                                                                     {#if ev.meta.first_bullet_acc > 0}<div class="timeline-note">First bullet {ev.meta.first_bullet_acc.toFixed(1)}° off head ({ev.meta.was_peeking ? 'Peeking' : 'Holding'})</div>{/if}
                                                                 </div>
@@ -579,14 +588,17 @@
     .event-content {
         flex: 1;
         min-width: 0;
-        padding-bottom: var(--space-3);
+        padding: var(--space-3);
+        margin-bottom: var(--space-3);
+        background: var(--color-surface-2);
+        border-radius: var(--radius-sm);
         display: flex;
         flex-direction: column;
         gap: var(--space-1);
     }
 
     .event-row:last-child .event-content {
-        padding-bottom: 0;
+        margin-bottom: 0;
     }
 
     .event-row-head {
