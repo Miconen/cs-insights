@@ -672,9 +672,10 @@
     .timeline-row.bold { font-weight: 600; }
 
     .t-time {
-        width: 5ch;
+        width: 7ch;
         flex-shrink: 0;
         text-align: right;
+        white-space: nowrap;
     }
 
     .timeline-analysis {
