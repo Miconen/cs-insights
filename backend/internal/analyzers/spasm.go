@@ -40,6 +40,10 @@ func (a *SpasmAnalyzer) Name() string {
 
 func (a *SpasmAnalyzer) OnEvent(event interface{}, state *parser.GameState) {
 	switch e := event.(type) {
+	case events.RoundStart:
+		a.history = [32]viewAngles{}
+		a.head = 0
+
 	case events.WeaponFire:
 		if e.Shooter == nil || e.Shooter.Name != a.targetPlayer {
 			return
@@ -57,6 +61,8 @@ func (a *SpasmAnalyzer) OnEvent(event interface{}, state *parser.GameState) {
 func (a *SpasmAnalyzer) OnTickDone(state *parser.GameState) {
 	targetPlayer := getPlayerByName(state, a.targetPlayer)
 	if targetPlayer == nil || !targetPlayer.IsAlive() {
+		a.history = [32]viewAngles{}
+		a.head = 0
 		return
 	}
 

@@ -37,6 +37,9 @@ func (a *SprayAnalyzer) Name() string {
 
 func (a *SprayAnalyzer) OnEvent(event interface{}, state *parser.GameState) {
 	switch e := event.(type) {
+	case events.RoundStart:
+		a.resetSpray()
+
 	case events.WeaponFire:
 		if e.Shooter == nil || e.Shooter.Name != a.targetPlayer {
 			return
@@ -67,9 +70,7 @@ func (a *SprayAnalyzer) OnEvent(event interface{}, state *parser.GameState) {
 
 		if a.isSpraying && tickDiff > 16 { // If more than ~0.25s passed since last shot, spray ended
 			a.evaluateSpray(state)
-			a.isSpraying = false
-			a.shotsFired = 0
-			a.shotsHit = 0
+			a.resetSpray()
 		}
 
 		if !a.isSpraying {
@@ -99,11 +100,18 @@ func (a *SprayAnalyzer) OnTickDone(state *parser.GameState) {
 		tickDiff := state.CurrentTick - a.lastShotTick
 		if tickDiff > 16 {
 			a.evaluateSpray(state)
-			a.isSpraying = false
-			a.shotsFired = 0
-			a.shotsHit = 0
+			a.resetSpray()
 		}
 	}
+}
+
+func (a *SprayAnalyzer) resetSpray() {
+	a.isSpraying = false
+	a.sprayStartTick = 0
+	a.shotsFired = 0
+	a.shotsHit = 0
+	a.lastShotTick = 0
+	a.lastEnemyHitID = 0
 }
 
 func (a *SprayAnalyzer) evaluateSpray(state *parser.GameState) {

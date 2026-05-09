@@ -33,6 +33,10 @@ func (a *CounterStrafeAnalyzer) Name() string {
 
 func (a *CounterStrafeAnalyzer) OnEvent(event interface{}, state *parser.GameState) {
 	switch e := event.(type) {
+	case events.RoundStart:
+		a.lastPos = r3.Vector{}
+		a.speed2D = 0
+
 	case events.WeaponFire:
 		if e.Shooter == nil || e.Shooter.Name != a.targetPlayer {
 			return
@@ -98,6 +102,8 @@ func (a *CounterStrafeAnalyzer) OnEvent(event interface{}, state *parser.GameSta
 func (a *CounterStrafeAnalyzer) OnTickDone(state *parser.GameState) {
 	targetPlayer := getPlayerByName(state, a.targetPlayer)
 	if targetPlayer == nil || !targetPlayer.IsAlive() {
+		a.lastPos = r3.Vector{}
+		a.speed2D = 0
 		return
 	}
 
