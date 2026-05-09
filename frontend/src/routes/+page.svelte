@@ -316,6 +316,13 @@
                                                     </button>
                                                     {#if isOpen(gfKey, false)}
                                                         <div class="duel-timeline">
+                                                            {#if ev.meta.analysis}
+                                                                <div class="timeline-analysis">
+                                                                    <strong>Rating: {ev.meta.rating}/10</strong><br>
+                                                                    {ev.meta.analysis}
+                                                                </div>
+                                                                <hr class="timeline-divider">
+                                                            {/if}
                                                             <div class="timeline-row"><span class="t-time">0ms</span><span>Spotted</span></div>
                                                             {#if ev.meta.target_shot_ms > 0}<div class="timeline-row you"><span class="t-time">{Math.round(ev.meta.target_shot_ms)}ms</span><span>You fired</span></div>{/if}
                                                             {#if ev.meta.enemy_shot_ms > 0}<div class="timeline-row enemy"><span class="t-time">{Math.round(ev.meta.enemy_shot_ms)}ms</span><span>Enemy fired</span></div>{/if}
@@ -592,6 +599,19 @@
         width: 5ch;
         flex-shrink: 0;
         text-align: right;
+    }
+
+    .timeline-analysis {
+        font-size: 0.82rem;
+        color: var(--color-text);
+        line-height: 1.4;
+        margin-bottom: var(--space-1);
+    }
+
+    .timeline-divider {
+        border: none;
+        border-top: 1px solid var(--color-border);
+        margin: var(--space-1) 0;
     }
 
     .timeline-note {

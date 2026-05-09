@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"math"
+	"strings"
 
 	"cs-insights/internal/parser"
 	"github.com/markus-wa/demoinfocs-golang/v5/pkg/demoinfocs/common"
@@ -20,7 +21,18 @@ type Gunfight struct {
 	EnemyFirstHitTick   int
 	IsActive            bool
 	CrosshairPitchDiff  float64
-	CrosshairDirection  string
+	CrosshairDirection   string
+
+	TargetDamage int
+	EnemyDamage  int
+	TargetHits   int
+	EnemyHits    int
+
+	TargetWeapon string
+	EnemyWeapon  string
+
+	TargetStartHP int
+	EnemyStartHP  int
 
 	// First Bullet Accuracy
 	TargetFirstBulletAccuracy float64
@@ -37,6 +49,18 @@ type GunfightMetadata struct {
 	Winner         string  `json:"winner"`
 	FirstBulletAcc float64 `json:"first_bullet_acc"`
 	WasPeeking     bool    `json:"was_peeking"`
+
+	TargetDamage  int    `json:"target_damage"`
+	EnemyDamage   int    `json:"enemy_damage"`
+	TargetHits    int    `json:"target_hits"`
+	EnemyHits     int    `json:"enemy_hits"`
+	TargetWeapon  string `json:"target_weapon"`
+	EnemyWeapon   string `json:"enemy_weapon"`
+	TargetStartHP int    `json:"target_start_hp"`
+	EnemyStartHP  int    `json:"enemy_start_hp"`
+
+	Rating   int    `json:"rating"`
+	Analysis string `json:"analysis"`
 }
 
 type GunfightAnalyzer struct {
@@ -79,6 +103,9 @@ func (a *GunfightAnalyzer) OnEvent(event interface{}, state *parser.GameState) {
 
 		if e.Shooter.Name == a.targetPlayer {
 			duel := a.getOrCreateDuel(state, closestEnemy)
+			if duel.TargetWeapon == "" {
+				duel.TargetWeapon = e.Weapon.String()
+			}
 			if duel.TargetFirstShotTick == 0 {
 				duel.TargetFirstShotTick = state.CurrentTick
 
@@ -104,6 +131,9 @@ func (a *GunfightAnalyzer) OnEvent(event interface{}, state *parser.GameState) {
 			}
 		} else if closestEnemy.Name == a.targetPlayer {
 			duel := a.getOrCreateDuel(state, e.Shooter)
+			if duel.EnemyWeapon == "" {
+				duel.EnemyWeapon = e.Weapon.String()
+			}
 			if duel.EnemyFirstShotTick == 0 {
 				duel.EnemyFirstShotTick = state.CurrentTick
 			}
@@ -115,11 +145,15 @@ func (a *GunfightAnalyzer) OnEvent(event interface{}, state *parser.GameState) {
 		}
 		if e.Attacker.Name == a.targetPlayer {
 			duel := a.getOrCreateDuel(state, e.Player)
+			duel.TargetDamage += e.HealthDamage
+			duel.TargetHits++
 			if duel.TargetFirstHitTick == 0 {
 				duel.TargetFirstHitTick = state.CurrentTick
 			}
 		} else if e.Player.Name == a.targetPlayer {
 			duel := a.getOrCreateDuel(state, e.Attacker)
+			duel.EnemyDamage += e.HealthDamage
+			duel.EnemyHits++
 			if duel.EnemyFirstHitTick == 0 {
 				duel.EnemyFirstHitTick = state.CurrentTick
 			}
@@ -208,11 +242,20 @@ func (a *GunfightAnalyzer) getOrCreateDuel(state *parser.GameState, enemy *commo
 	if duel, exists := a.activeDuels[enemy.UserID]; exists {
 		return duel
 	}
+
+	targetPlayer := getPlayerByName(state, a.targetPlayer)
+	targetHP := 100
+	if targetPlayer != nil {
+		targetHP = targetPlayer.Health()
+	}
+
 	duel := &Gunfight{
-		EnemyID:   enemy.UserID,
-		EnemyName: enemy.Name,
-		StartTick: state.CurrentTick,
-		IsActive:  true,
+		EnemyID:       enemy.UserID,
+		EnemyName:     enemy.Name,
+		StartTick:     state.CurrentTick,
+		IsActive:      true,
+		TargetStartHP: targetHP,
+		EnemyStartHP:  enemy.Health(),
 	}
 	a.activeDuels[enemy.UserID] = duel
 	return duel
@@ -275,6 +318,14 @@ func (a *GunfightAnalyzer) resolveDuel(state *parser.GameState, duel *Gunfight, 
 		Winner:         winner,
 		FirstBulletAcc: duel.TargetFirstBulletAccuracy,
 		WasPeeking:     duel.TargetWasPeeking,
+		TargetDamage:   duel.TargetDamage,
+		EnemyDamage:    duel.EnemyDamage,
+		TargetHits:     duel.TargetHits,
+		EnemyHits:      duel.EnemyHits,
+		TargetWeapon:   duel.TargetWeapon,
+		EnemyWeapon:    duel.EnemyWeapon,
+		TargetStartHP:  duel.TargetStartHP,
+		EnemyStartHP:   duel.EnemyStartHP,
 	}
 
 	// Only record if it was an actual duel (shots fired or damage dealt)
@@ -282,22 +333,27 @@ func (a *GunfightAnalyzer) resolveDuel(state *parser.GameState, duel *Gunfight, 
 		return
 	}
 
+	rating, analysis := evaluateDuel(duel, meta, winner == a.targetPlayer)
+	meta.Rating = rating
+	meta.Analysis = analysis
+
 	metaBytes, _ := json.Marshal(meta)
 
 	severity := "Low"
 	desc := fmt.Sprintf("Duel vs %s (Won)", duel.EnemyName)
 	if winner != a.targetPlayer {
-		severity = "High"
+		if rating <= 3 {
+			severity = "High"
+		} else if rating <= 6 {
+			severity = "Medium"
+		} else {
+			severity = "Low"
+		}
 		desc = fmt.Sprintf("Duel lost vs %s", duel.EnemyName)
-
-		// Add some contextual text based on the math
-		if meta.TargetTTDMs == 0 && meta.EnemyTTDMs > 0 {
-			desc += " - You dealt no damage."
-		} else if meta.TargetTTDMs > meta.EnemyTTDMs {
-			diff := meta.TargetTTDMs - meta.EnemyTTDMs
-			desc += fmt.Sprintf(" - You were %.0fms slower to deal damage.", diff)
-		} else if meta.TargetShotMs > 0 && meta.TargetShotMs < meta.EnemyShotMs && meta.TargetTTDMs == 0 {
-			desc += " - You shot first but missed."
+	} else {
+		// If you won, but the rating was poor (e.g. you got lucky)
+		if rating <= 4 {
+			severity = "Medium"
 		}
 	}
 
@@ -309,6 +365,79 @@ func (a *GunfightAnalyzer) resolveDuel(state *parser.GameState, duel *Gunfight, 
 		Description: desc,
 		Metadata:    string(metaBytes),
 	})
+}
+
+func evaluateDuel(duel *Gunfight, meta GunfightMetadata, won bool) (int, string) {
+	rating := 5
+	analysis := ""
+
+	if won {
+		rating += 2
+		if meta.TargetTTDMs > 0 && meta.TargetTTDMs < 300 {
+			rating += 2 // Fast kill
+			analysis += fmt.Sprintf("Excellent TTK (%.0fms). ", meta.TargetTTDMs)
+		} else if meta.TargetDamage >= 100 {
+			analysis += "Solid kill. "
+		}
+
+		if meta.TargetStartHP < meta.EnemyStartHP-20 {
+			rating += 2 // Won at a disadvantage
+			analysis += "Great job winning at a health disadvantage! "
+		}
+
+		if meta.EnemyDamage >= 80 {
+			rating -= 2 // Barely survived
+			analysis += "You barely survived this duel. "
+		}
+	} else {
+		if meta.TargetDamage == 0 {
+			rating -= 3 // Whiffed or instakilled
+			if meta.TargetShotMs > 0 && meta.TargetShotMs < meta.EnemyShotMs {
+				analysis += "You shot first but whiffed completely, dealing 0 damage while they killed you. "
+			} else if meta.TargetShotMs == 0 {
+				analysis += "You were killed before you could even fire a shot. "
+			} else {
+				analysis += "You dealt 0 damage in this fight. "
+			}
+		} else if meta.TargetDamage >= 80 {
+			rating += 2 // Close fight
+			analysis += fmt.Sprintf("Very close fight! You dealt heavy damage (%d in %d hits). ", meta.TargetDamage, meta.TargetHits)
+			if meta.TargetWeapon != "" && meta.EnemyWeapon != "" {
+				analysis += fmt.Sprintf("Lost the aim duel against %s with your %s. ", meta.EnemyWeapon, meta.TargetWeapon)
+			}
+		} else {
+			rating -= 1
+			analysis += fmt.Sprintf("You traded some damage (%d in %d hits). ", meta.TargetDamage, meta.TargetHits)
+		}
+
+		if meta.TargetStartHP <= 20 {
+			rating += 2 // Was basically unwinnable
+			analysis += fmt.Sprintf("You started the duel at critical health (%d HP), making this an extremely hard fight to win. ", meta.TargetStartHP)
+		} else if meta.TargetStartHP > 80 && meta.EnemyStartHP <= 30 && meta.TargetDamage == 0 {
+			rating -= 3 // Choked an easy kill
+			analysis += "You had a massive health advantage but choked the kill. "
+		}
+
+		if meta.TargetShotMs > 0 && meta.EnemyShotMs > 0 {
+			if meta.TargetShotMs > meta.EnemyShotMs+100 {
+				rating -= 1
+				analysis += fmt.Sprintf("Your slow reaction time (fired %.0fms after enemy) cost you the duel. ", meta.TargetShotMs-meta.EnemyShotMs)
+			}
+		}
+	}
+
+	if meta.FirstBulletAcc > 5.0 {
+		rating -= 1
+		analysis += "Your first bullet accuracy was poor (>5° off). "
+	}
+
+	if rating < 1 {
+		rating = 1
+	} else if rating > 10 {
+		rating = 10
+	}
+
+	return rating, strings.TrimSpace(analysis)
 }
 
 func (a *GunfightAnalyzer) GetInsights() []parser.InsightData {
