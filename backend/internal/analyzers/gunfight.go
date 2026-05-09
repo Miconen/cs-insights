@@ -16,6 +16,8 @@ type Gunfight struct {
 	EnemyID             int
 	EnemyName           string
 	StartTick           int
+	LastSeenTick        int
+	LastCombatTick      int
 	TargetFirstShotTick int
 	EnemyFirstShotTick  int
 	TargetFirstHitTick  int
@@ -42,9 +44,6 @@ type Gunfight struct {
 	TargetMaxDist             float64
 	EnemyMaxDist              float64
 
-	// Snapshots of position history at duel creation
-	TargetPosSnapshot []r3.Vector
-	EnemyPosSnapshot  []r3.Vector
 }
 
 type GunfightMetadata struct {
@@ -82,6 +81,13 @@ type GunfightAnalyzer struct {
 	positionHistory map[int][]r3.Vector
 }
 
+const (
+	peekMovementThreshold = 15.0
+	trackingFOVDegrees    = 20.0
+	shotAssignmentFOV     = 35.0
+	duelStaleTicks        = 48
+)
+
 func NewGunfightAnalyzer(targetPlayer string) *GunfightAnalyzer {
 	return &GunfightAnalyzer{
 		targetPlayer:    targetPlayer,
@@ -95,12 +101,15 @@ func (a *GunfightAnalyzer) Name() string {
 }
 
 func (a *GunfightAnalyzer) OnEvent(event interface{}, state *parser.GameState) {
-	if state.LiveEnemyCount == 0 {
-		return
-	}
-
 	switch e := event.(type) {
+	case events.RoundStart:
+		a.activeDuels = make(map[int]*Gunfight)
+		a.positionHistory = make(map[int][]r3.Vector)
+
 	case events.WeaponFire:
+		if state.LiveEnemyCount == 0 {
+			return
+		}
 		if e.Shooter == nil {
 			return
 		}
@@ -117,6 +126,8 @@ func (a *GunfightAnalyzer) OnEvent(event interface{}, state *parser.GameState) {
 
 		if e.Shooter.Name == a.targetPlayer {
 			duel := a.getOrCreateDuel(state, closestEnemy)
+			a.updateDuelMovement(duel, e.Shooter, closestEnemy)
+			duel.LastCombatTick = state.CurrentTick
 			if duel.TargetWeapon == "" {
 				duel.TargetWeapon = e.Weapon.String()
 			}
@@ -136,30 +147,31 @@ func (a *GunfightAnalyzer) OnEvent(event interface{}, state *parser.GameState) {
 					duel.TargetFirstBulletAccuracy = math.Sqrt(pDiff*pDiff + yDiff*yDiff)
 				}
 
-				// Check if holding or peeking using the snapshot taken at duel creation
-				duel.TargetMaxDist = maxMovement(duel.TargetPosSnapshot)
-				duel.TargetWasPeeking = duel.TargetMaxDist > 15.0
 			}
 		} else if closestEnemy.Name == a.targetPlayer {
 			duel := a.getOrCreateDuel(state, e.Shooter)
+			targetPlayer := getPlayerByName(state, a.targetPlayer)
+			a.updateDuelMovement(duel, targetPlayer, e.Shooter)
+			duel.LastCombatTick = state.CurrentTick
 			if duel.EnemyWeapon == "" {
 				duel.EnemyWeapon = e.Weapon.String()
 			}
 			if duel.EnemyFirstShotTick == 0 {
 				duel.EnemyFirstShotTick = state.CurrentTick
-
-				// Check if holding or peeking using the snapshot taken at duel creation
-				duel.EnemyMaxDist = maxMovement(duel.EnemyPosSnapshot)
-				duel.EnemyWasPeeking = duel.EnemyMaxDist > 15.0
 			}
 		}
 
 	case events.PlayerHurt:
+		if state.LiveEnemyCount == 0 {
+			return
+		}
 		if e.Attacker == nil || e.Player == nil {
 			return
 		}
 		if e.Attacker.Name == a.targetPlayer {
 			duel := a.getOrCreateDuel(state, e.Player)
+			a.updateDuelMovement(duel, e.Attacker, e.Player)
+			duel.LastCombatTick = state.CurrentTick
 			duel.TargetDamage += e.HealthDamage
 			duel.TargetHits++
 			if duel.TargetFirstHitTick == 0 {
@@ -167,6 +179,8 @@ func (a *GunfightAnalyzer) OnEvent(event interface{}, state *parser.GameState) {
 			}
 		} else if e.Player.Name == a.targetPlayer {
 			duel := a.getOrCreateDuel(state, e.Attacker)
+			a.updateDuelMovement(duel, e.Player, e.Attacker)
+			duel.LastCombatTick = state.CurrentTick
 			duel.EnemyDamage += e.HealthDamage
 			duel.EnemyHits++
 			if duel.EnemyFirstHitTick == 0 {
@@ -175,6 +189,9 @@ func (a *GunfightAnalyzer) OnEvent(event interface{}, state *parser.GameState) {
 		}
 
 	case events.Kill:
+		if state.LiveEnemyCount == 0 {
+			return
+		}
 		if e.Killer == nil || e.Victim == nil {
 			return
 		}
@@ -183,6 +200,8 @@ func (a *GunfightAnalyzer) OnEvent(event interface{}, state *parser.GameState) {
 			// Target died
 			duel, exists := a.activeDuels[e.Killer.UserID]
 			if exists {
+				a.updateDuelMovement(duel, e.Victim, e.Killer)
+				duel.LastCombatTick = state.CurrentTick
 				a.resolveDuel(state, duel, e.Killer.Name)
 				delete(a.activeDuels, e.Killer.UserID)
 			}
@@ -190,6 +209,8 @@ func (a *GunfightAnalyzer) OnEvent(event interface{}, state *parser.GameState) {
 			// Target killed enemy
 			duel, exists := a.activeDuels[e.Victim.UserID]
 			if exists {
+				a.updateDuelMovement(duel, e.Killer, e.Victim)
+				duel.LastCombatTick = state.CurrentTick
 				a.resolveDuel(state, duel, a.targetPlayer)
 				delete(a.activeDuels, e.Victim.UserID)
 			}
@@ -197,22 +218,38 @@ func (a *GunfightAnalyzer) OnEvent(event interface{}, state *parser.GameState) {
 	}
 }
 
-func maxMovement(positions []r3.Vector) float64 {
-	if len(positions) < 2 {
+func maxMovement(positions []r3.Vector, current r3.Vector) float64 {
+	if len(positions) == 0 {
 		return 0
 	}
-	// Measure the maximum distance between any position and the final position
-	last := positions[len(positions)-1]
 	var maxDist float64
 	for _, pos := range positions {
-		distX := last.X - pos.X
-		distY := last.Y - pos.Y
+		distX := current.X - pos.X
+		distY := current.Y - pos.Y
 		dist := math.Sqrt(float64(distX*distX + distY*distY))
 		if dist > maxDist {
 			maxDist = dist
 		}
 	}
 	return maxDist
+}
+
+func (a *GunfightAnalyzer) playerMovement(p *common.Player) float64 {
+	if p == nil {
+		return 0
+	}
+	return maxMovement(a.positionHistory[p.UserID], p.Position())
+}
+
+func (a *GunfightAnalyzer) updateDuelMovement(duel *Gunfight, targetPlayer *common.Player, enemy *common.Player) {
+	if targetDist := a.playerMovement(targetPlayer); targetDist > duel.TargetMaxDist {
+		duel.TargetMaxDist = targetDist
+	}
+	if enemyDist := a.playerMovement(enemy); enemyDist > duel.EnemyMaxDist {
+		duel.EnemyMaxDist = enemyDist
+	}
+	duel.TargetWasPeeking = duel.TargetMaxDist > peekMovementThreshold
+	duel.EnemyWasPeeking = duel.EnemyMaxDist > peekMovementThreshold
 }
 
 func (a *GunfightAnalyzer) OnTickDone(state *parser.GameState) {
@@ -259,7 +296,7 @@ func (a *GunfightAnalyzer) OnTickDone(state *parser.GameState) {
 			yDiff = 360 - yDiff
 		}
 
-		inSight := pDiff < 45 && yDiff < 45
+		inSight := pDiff < trackingFOVDegrees && yDiff < trackingFOVDegrees
 
 		duel, exists := a.activeDuels[p.UserID]
 		if inSight {
@@ -280,9 +317,11 @@ func (a *GunfightAnalyzer) OnTickDone(state *parser.GameState) {
 					}
 				}
 			}
+			duel.LastSeenTick = state.CurrentTick
 		} else {
-			// If out of sight and time has passed, we could expire the duel.
-			// For simplicity, we just keep it until someone dies or the round ends.
+			if exists && duel.LastCombatTick == 0 && state.CurrentTick-duel.LastSeenTick > duelStaleTicks {
+				delete(a.activeDuels, p.UserID)
+			}
 		}
 	}
 }
@@ -298,30 +337,16 @@ func (a *GunfightAnalyzer) getOrCreateDuel(state *parser.GameState, enemy *commo
 		targetHP = targetPlayer.Health()
 	}
 
-	// Snapshot position histories at the moment the duel is created
-	// so we capture the movement that *led to* this engagement
-	var targetSnap, enemySnap []r3.Vector
-	if targetPlayer != nil {
-		if h, ok := a.positionHistory[targetPlayer.UserID]; ok {
-			targetSnap = make([]r3.Vector, len(h))
-			copy(targetSnap, h)
-		}
-	}
-	if h, ok := a.positionHistory[enemy.UserID]; ok {
-		enemySnap = make([]r3.Vector, len(h))
-		copy(enemySnap, h)
-	}
-
 	duel := &Gunfight{
-		EnemyID:           enemy.UserID,
-		EnemyName:         enemy.Name,
-		StartTick:         state.CurrentTick,
-		IsActive:          true,
-		TargetStartHP:     targetHP,
-		EnemyStartHP:      enemy.Health(),
-		TargetPosSnapshot: targetSnap,
-		EnemyPosSnapshot:  enemySnap,
+		EnemyID:       enemy.UserID,
+		EnemyName:     enemy.Name,
+		StartTick:     state.CurrentTick,
+		LastSeenTick:  state.CurrentTick,
+		IsActive:      true,
+		TargetStartHP: targetHP,
+		EnemyStartHP:  enemy.Health(),
 	}
+	a.updateDuelMovement(duel, targetPlayer, enemy)
 	a.activeDuels[enemy.UserID] = duel
 	return duel
 }
@@ -355,7 +380,7 @@ func (a *GunfightAnalyzer) getClosestEnemy(state *parser.GameState, player *comm
 	}
 
 	// Make sure they are relatively close in aim
-	if minAngle > 45.0 {
+	if minAngle > shotAssignmentFOV {
 		return nil
 	}
 	return closestEnemy
@@ -416,12 +441,9 @@ func (a *GunfightAnalyzer) resolveDuel(state *parser.GameState, duel *Gunfight, 
 		meta.FightType = "Hold vs Hold"
 	}
 
-	rating, analysis := evaluateDuel(duel, meta, winner == a.targetPlayer)
+	rating, analysis := evaluateDuel(duel, &meta, winner == a.targetPlayer)
 	meta.Rating = rating
 	meta.Analysis = analysis
-
-	// Debug tag
-	meta.Tags = append(meta.Tags, fmt.Sprintf("TargetDist: %.1f, EnemyDist: %.1f", duel.TargetMaxDist, duel.EnemyMaxDist))
 
 	metaBytes, _ := json.Marshal(meta)
 
@@ -453,7 +475,7 @@ func (a *GunfightAnalyzer) resolveDuel(state *parser.GameState, duel *Gunfight, 
 	})
 }
 
-func evaluateDuel(duel *Gunfight, meta GunfightMetadata, won bool) (int, string) {
+func evaluateDuel(duel *Gunfight, meta *GunfightMetadata, won bool) (int, string) {
 	rating := 5
 	analysis := ""
 	var details []string
@@ -533,7 +555,7 @@ func evaluateDuel(duel *Gunfight, meta GunfightMetadata, won bool) (int, string)
 	} else if meta.FirstBulletAcc > 5.0 {
 		rating -= 1
 		details = append(details, "-1 Your first bullet accuracy was poor (>5° off).")
-	} else if meta.FirstBulletAcc <= 2.0 && !meta.WasPeeking {
+	} else if meta.FirstBulletAcc > 0 && meta.FirstBulletAcc <= 2.0 && !meta.WasPeeking {
 		rating += 1
 		details = append(details, "+1 Excellent crosshair placement while holding.")
 	}
