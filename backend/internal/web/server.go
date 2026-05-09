@@ -112,6 +112,10 @@ func (s *Server) handleFetchProcessAPI(w http.ResponseWriter, r *http.Request) {
 	}
 
 	// 3. Save Insights
+	if err := s.db.DeleteInsightsForMatch(req.PlayerName, demPath); err != nil {
+		http.Error(w, "Error replacing previous insights: "+err.Error(), http.StatusInternalServerError)
+		return
+	}
 	for _, i := range insights {
 		err := s.db.SaveInsight(db.Insight{
 			PlayerName:  req.PlayerName,

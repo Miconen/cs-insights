@@ -62,6 +62,11 @@ func (d *Database) ClearInsights() error {
 	return err
 }
 
+func (d *Database) DeleteInsightsForMatch(playerName, matchName string) error {
+	_, err := d.db.Exec("DELETE FROM insights WHERE player_name = ? AND match_name = ?", playerName, matchName)
+	return err
+}
+
 func (d *Database) SaveInsight(i Insight) error {
 	query := `
 	INSERT INTO insights (player_name, match_name, round, tick, type, severity, description, metadata)

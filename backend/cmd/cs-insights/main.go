@@ -103,6 +103,10 @@ func main() {
 		log.Printf("Parsing complete for %s. Found %d insights.", dp, len(insights))
 
 		// Save to DB
+		if err := database.DeleteInsightsForMatch(*playerName, dp); err != nil {
+			log.Printf("Failed to replace previous insights for %s: %v", dp, err)
+			continue
+		}
 		for _, i := range insights {
 			err := database.SaveInsight(db.Insight{
 				PlayerName:  *playerName,

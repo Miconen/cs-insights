@@ -128,27 +128,7 @@ func (e *Engine) Parse() ([]InsightData, error) {
 			break
 		}
 
-		e.state.CurrentTick = p.CurrentFrame()
-
-		// Update live enemy count for the target player's team perspective.
-		liveEnemies := 0
-		var targetTeam int
-		for _, participant := range p.GameState().Participants().Playing() {
-			if participant.Name == e.targetPlayer {
-				targetTeam = int(participant.Team)
-				break
-			}
-		}
-		if targetTeam != 0 {
-			for _, participant := range p.GameState().Participants().Playing() {
-				team := int(participant.Team)
-				// 2 = T, 3 = CT
-				if (team == 2 || team == 3) && team != targetTeam && participant.IsAlive() {
-					liveEnemies++
-				}
-			}
-		}
-		e.state.LiveEnemyCount = liveEnemies
+		e.updateStateFromParser()
 
 		for _, a := range e.analyzers {
 			a.OnTickDone(e.state)
@@ -192,10 +172,35 @@ func mergeMatchMetadata(existing string, additions map[string]interface{}) strin
 }
 
 func (e *Engine) notifyEvent(event interface{}) {
-	if e.state.Parser != nil {
-		e.state.CurrentTick = e.state.Parser.CurrentFrame()
-	}
+	e.updateStateFromParser()
 	for _, a := range e.analyzers {
 		a.OnEvent(event, e.state)
 	}
+}
+
+func (e *Engine) updateStateFromParser() {
+	if e.state.Parser == nil {
+		return
+	}
+
+	e.state.CurrentTick = e.state.Parser.CurrentFrame()
+
+	liveEnemies := 0
+	var targetTeam int
+	for _, participant := range e.state.Parser.GameState().Participants().Playing() {
+		if participant.Name == e.targetPlayer {
+			targetTeam = int(participant.Team)
+			break
+		}
+	}
+	if targetTeam != 0 {
+		for _, participant := range e.state.Parser.GameState().Participants().Playing() {
+			team := int(participant.Team)
+			// 2 = T, 3 = CT
+			if (team == 2 || team == 3) && team != targetTeam && participant.IsAlive() {
+				liveEnemies++
+			}
+		}
+	}
+	e.state.LiveEnemyCount = liveEnemies
 }
