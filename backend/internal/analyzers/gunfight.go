@@ -393,13 +393,17 @@ func evaluateDuel(duel *Gunfight, meta GunfightMetadata, won bool) (int, string)
 		}
 	} else {
 		if meta.TargetDamage == 0 {
-			rating -= 3 // Whiffed or instakilled
-			if meta.TargetShotMs > 0 && meta.TargetShotMs < meta.EnemyShotMs {
-				details = append(details, "-3 You shot first but whiffed completely, dealing 0 damage while they killed you.")
-			} else if meta.TargetShotMs == 0 {
-				details = append(details, "-3 You were killed before you could even fire a shot.")
+			if meta.EnemyDamage >= 100 && meta.EnemyHits == 1 && meta.TargetShotMs < 0 {
+				details = append(details, "0 You were instantly one-tapped before you could react. Just unlucky.")
 			} else {
-				details = append(details, "-3 You dealt 0 damage in this fight.")
+				rating -= 3 // Whiffed or instakilled
+				if meta.TargetShotMs >= 0 && (meta.EnemyShotMs < 0 || meta.TargetShotMs < meta.EnemyShotMs) {
+					details = append(details, "-3 You shot first but whiffed completely, dealing 0 damage while they killed you.")
+				} else if meta.TargetShotMs < 0 {
+					details = append(details, "-3 You were killed before you could even fire a shot.")
+				} else {
+					details = append(details, "-3 You dealt 0 damage in this fight.")
+				}
 			}
 		} else if meta.TargetDamage >= 80 {
 			rating += 2 // Close fight
@@ -421,7 +425,7 @@ func evaluateDuel(duel *Gunfight, meta GunfightMetadata, won bool) (int, string)
 			details = append(details, "-3 You had a massive health advantage but choked the kill.")
 		}
 
-		if meta.TargetShotMs > 0 && meta.EnemyShotMs > 0 {
+		if meta.TargetShotMs >= 0 && meta.EnemyShotMs >= 0 {
 			if meta.TargetShotMs > meta.EnemyShotMs+100 {
 				rating -= 1
 				details = append(details, fmt.Sprintf("-1 Your slow reaction time (fired %.0fms after enemy) cost you the duel.", meta.TargetShotMs-meta.EnemyShotMs))
@@ -429,9 +433,15 @@ func evaluateDuel(duel *Gunfight, meta GunfightMetadata, won bool) (int, string)
 		}
 	}
 
-	if meta.FirstBulletAcc > 5.0 {
+	if meta.FirstBulletAcc > 10.0 {
+		rating -= 2
+		details = append(details, "-2 You shot wildly before aiming (>10° off target).")
+	} else if meta.FirstBulletAcc > 5.0 {
 		rating -= 1
 		details = append(details, "-1 Your first bullet accuracy was poor (>5° off).")
+	} else if meta.FirstBulletAcc <= 2.0 && !meta.WasPeeking {
+		rating += 1
+		details = append(details, "+1 Excellent crosshair placement while holding.")
 	}
 
 	if rating < 1 {
