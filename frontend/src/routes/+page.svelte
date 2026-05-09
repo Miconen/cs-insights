@@ -481,74 +481,6 @@
     .game-children {
         display: flex;
         flex-direction: column;
-        padding-top: var(--space-3);
-    }
-
-    .ot-row {
-        display: flex;
-        align-items: flex-start;
-        gap: var(--space-2);
-        padding: 0 var(--space-4);
-    }
-
-    .ot-gutter {
-        display: flex;
-        flex-direction: column;
-        align-items: center;
-        flex-shrink: 0;
-        width: 1rem;
-    }
-
-    .ot-dot {
-        border-radius: 50%;
-        flex-shrink: 0;
-    }
-
-    .round-dot {
-        width: 0.45rem;
-        height: 0.45rem;
-        background: var(--color-text-muted);
-        margin-top: 0.25rem;
-    }
-
-    .ot-connector {
-        flex: 1;
-        width: 1px;
-        background: var(--color-border);
-        margin: 0.2rem 0;
-        min-height: var(--space-2);
-    }
-
-    .round-label {
-        font-weight: 600;
-        text-transform: uppercase;
-        letter-spacing: 0.04em;
-    }
-
-    .round-indent {
-        border-left: 1px solid var(--color-border);
-        margin-left: calc(var(--space-4) + 0.5rem - 0.5px); /* Align with round-dot center */
-        padding-left: var(--space-3);
-        padding-bottom: var(--space-2);
-        display: flex;
-        flex-direction: column;
-        gap: var(--space-3);
-    }
-
-    .round-indent.last-round {
-        border-left-color: transparent;
-    }
-
-    .event-list {
-        padding: 0 var(--space-2) var(--space-3);
-        display: flex;
-        flex-direction: column;
-        gap: 0;
-    }
-
-    .game-children {
-        display: flex;
-        flex-direction: column;
         margin-bottom: var(--space-6);
     }
 
@@ -595,7 +527,7 @@
     .round-indent {
         /* connect cluster cards to the round node with a left border */
         border-left: 1px solid var(--color-border);
-        margin-left: 0.32rem;          /* centre on .round-dot */
+        margin-left: calc(0.5rem - 0.5px); /* centre on .round-dot (1rem width / 2) */
         padding-left: var(--space-4);
         padding-bottom: var(--space-3);
         display: flex;
@@ -608,7 +540,6 @@
     }
 
     .event-list {
-        padding: var(--space-3) var(--space-4);
         display: flex;
         flex-direction: column;
         gap: 0;
