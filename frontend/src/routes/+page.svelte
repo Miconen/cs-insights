@@ -267,12 +267,12 @@
 
         {#each buildTree(data.insights) as game, gi}
             {@const gameKey = 'g-' + game.matchName}
-            <div class="card game-tree-card">
+            <div class="game-tree">
                 <!-- ── Game header ─────────────────────────────────── -->
                 <button class="game-header-row" onclick={() => toggle(gameKey)}>
                     <div style="flex: 1; text-align: left; display: flex; align-items: baseline; gap: var(--space-2); flex-wrap: wrap;">
-                        <strong>{game.mapName}</strong>
-                        <span class="small muted mono">{game.displayName}</span>
+                        <strong style="font-size: 1.25rem;">{game.mapName}</strong>
+                        <span class="muted mono">{game.displayName}</span>
                         <span class="small muted">· {game.total} events</span>
                     </div>
                     <span class="tree-chevron">{openKeys[gameKey] !== false ? '▲' : '▼'}</span>
@@ -301,52 +301,50 @@
                             {#if openKeys[roundKey] !== false}
                                 <div class="round-indent" class:last-round={ri === game.rounds.length - 1}>
                                     {#each roundSection.clusters as cluster, ci}
-                                        <div class="cluster-card card">
-                                            <div class="event-list">
-                                                {#each cluster.events as ev, i}
-                                                    <div class="event-row">
-                                                        <div class="event-gutter">
-                                                            <div class="event-dot" style="background:{severityColor[ev.Severity]??'var(--color-accent)'}"></div>
-                                                            {#if i < cluster.events.length - 1}
-                                                                <div class="event-connector"></div>
-                                                            {/if}
-                                                        </div>
-                                                        <div class="event-content">
-                                                            <div class="event-row-head">
-                                                                <span class="event-type">{ev.Type}</span>
-                                                                <span class="mono muted" style="font-size:0.7rem">T{ev.Tick}</span>
-                                                                <button class="ev-copy chip" onclick={(e) => copytick(ev.Tick, e.currentTarget)}>copy</button>
-                                                            </div>
-                                                            <p class="event-desc">{ev.Description}</p>
-
-                                                            {#if ev.Type === "Gunfight" && ev.meta}
-                                                                {@const gfKey = `gf-${ev.Round}-${ev.Tick}`}
-                                                                <button class="chip cluster-toggle" onclick={() => toggleDuel(gfKey)}>
-                                                                    {openKeys[gfKey] ? '▲ Hide' : '▼ Duel details'}
-                                                                </button>
-                                                                {#if openKeys[gfKey]}
-                                                                    <div class="duel-timeline">
-                                                                        {#if ev.meta.analysis}
-                                                                            <div class="timeline-analysis">
-                                                                                <strong>Rating: {ev.meta.rating}/10</strong><br>
-                                                                                {ev.meta.analysis}
-                                                                            </div>
-                                                                            <hr class="timeline-divider">
-                                                                        {/if}
-                                                                        <div class="timeline-row"><span class="t-time">0ms</span><span>Spotted</span></div>
-                                                                        {#if ev.meta.target_shot_ms > 0}<div class="timeline-row you"><span class="t-time">{Math.round(ev.meta.target_shot_ms)}ms</span><span>You fired</span></div>{/if}
-                                                                        {#if ev.meta.enemy_shot_ms > 0}<div class="timeline-row enemy"><span class="t-time">{Math.round(ev.meta.enemy_shot_ms)}ms</span><span>Enemy fired</span></div>{/if}
-                                                                        {#if ev.meta.target_ttd_ms > 0}<div class="timeline-row you bold"><span class="t-time">{Math.round(ev.meta.target_ttd_ms)}ms</span><span>You dealt damage</span></div>{/if}
-                                                                        {#if ev.meta.enemy_ttd_ms > 0}<div class="timeline-row enemy bold"><span class="t-time">{Math.round(ev.meta.enemy_ttd_ms)}ms</span><span>Enemy dealt damage</span></div>{/if}
-                                                                        {#if ev.meta.crosshair_pitch > 0}<div class="timeline-note">Crosshair {ev.meta.crosshair_pitch.toFixed(1)}° {ev.meta.crosshair_dir} at duel start</div>{/if}
-                                                                        {#if ev.meta.first_bullet_acc > 0}<div class="timeline-note">First bullet {ev.meta.first_bullet_acc.toFixed(1)}° off head ({ev.meta.was_peeking ? 'Peeking' : 'Holding'})</div>{/if}
-                                                                    </div>
-                                                                {/if}
-                                                            {/if}
-                                                        </div>
+                                        <div class="event-list" class:cluster-gap={ci > 0}>
+                                            {#each cluster.events as ev, i}
+                                                <div class="event-row">
+                                                    <div class="event-gutter">
+                                                        <div class="event-dot" style="background:{severityColor[ev.Severity]??'var(--color-accent)'}"></div>
+                                                        {#if i < cluster.events.length - 1}
+                                                            <div class="event-connector"></div>
+                                                        {/if}
                                                     </div>
-                                                {/each}
-                                            </div>
+                                                    <div class="event-content">
+                                                        <div class="event-row-head">
+                                                            <span class="event-type">{ev.Type}</span>
+                                                            <span class="mono muted" style="font-size:0.7rem">T{ev.Tick}</span>
+                                                            <button class="ev-copy chip" onclick={(e) => copytick(ev.Tick, e.currentTarget)}>copy</button>
+                                                        </div>
+                                                        <p class="event-desc">{ev.Description}</p>
+
+                                                        {#if ev.Type === "Gunfight" && ev.meta}
+                                                            {@const gfKey = `gf-${ev.Round}-${ev.Tick}`}
+                                                            <button class="chip cluster-toggle" onclick={() => toggleDuel(gfKey)}>
+                                                                {openKeys[gfKey] ? '▲ Hide' : '▼ Duel details'}
+                                                            </button>
+                                                            {#if openKeys[gfKey]}
+                                                                <div class="duel-timeline">
+                                                                    {#if ev.meta.analysis}
+                                                                        <div class="timeline-analysis">
+                                                                            <strong>Rating: {ev.meta.rating}/10</strong><br>
+                                                                            {ev.meta.analysis}
+                                                                        </div>
+                                                                        <hr class="timeline-divider">
+                                                                    {/if}
+                                                                    <div class="timeline-row"><span class="t-time">0ms</span><span>Spotted</span></div>
+                                                                    {#if ev.meta.target_shot_ms > 0}<div class="timeline-row you"><span class="t-time">{Math.round(ev.meta.target_shot_ms)}ms</span><span>You fired</span></div>{/if}
+                                                                    {#if ev.meta.enemy_shot_ms > 0}<div class="timeline-row enemy"><span class="t-time">{Math.round(ev.meta.enemy_shot_ms)}ms</span><span>Enemy fired</span></div>{/if}
+                                                                    {#if ev.meta.target_ttd_ms > 0}<div class="timeline-row you bold"><span class="t-time">{Math.round(ev.meta.target_ttd_ms)}ms</span><span>You dealt damage</span></div>{/if}
+                                                                    {#if ev.meta.enemy_ttd_ms > 0}<div class="timeline-row enemy bold"><span class="t-time">{Math.round(ev.meta.enemy_ttd_ms)}ms</span><span>Enemy dealt damage</span></div>{/if}
+                                                                    {#if ev.meta.crosshair_pitch > 0}<div class="timeline-note">Crosshair {ev.meta.crosshair_pitch.toFixed(1)}° {ev.meta.crosshair_dir} at duel start</div>{/if}
+                                                                    {#if ev.meta.first_bullet_acc > 0}<div class="timeline-note">First bullet {ev.meta.first_bullet_acc.toFixed(1)}° off head ({ev.meta.was_peeking ? 'Peeking' : 'Holding'})</div>{/if}
+                                                                </div>
+                                                            {/if}
+                                                        {/if}
+                                                    </div>
+                                                </div>
+                                            {/each}
                                         </div>
                                     {/each}
                                 </div>
@@ -416,9 +414,57 @@
     }
 
     /* ── Outer tree: game → round ────────────────────────────────────── */
-    .game-tree-card {
-        padding: 0;
-        overflow: hidden;
+    .game-tree {
+        margin-bottom: var(--space-5);
+    }
+
+    .game-header-row {
+        display: flex;
+        align-items: baseline;
+        gap: var(--space-2);
+        flex-wrap: wrap;
+        width: 100%;
+        background: transparent;
+        border: none;
+        cursor: pointer;
+        text-align: left;
+        color: var(--color-text);
+        font: inherit;
+        padding: var(--space-2) 0;
+        margin-bottom: var(--space-2);
+    }
+
+    .game-header-row:hover {
+        color: var(--color-accent);
+    }
+
+    .game-children {
+        display: flex;
+        flex-direction: column;
+    }
+
+    .round-row-btn {
+        display: flex;
+        justify-content: space-between;
+        align-items: center;
+        width: 100%;
+        padding: var(--space-1) 0;
+        background: transparent;
+        border: none;
+        cursor: pointer;
+        text-align: left;
+        color: var(--color-text-muted);
+        font: inherit;
+    }
+
+    .round-row-btn:hover {
+        color: var(--color-text);
+    }
+
+    .ot-row {
+        display: flex;
+        align-items: flex-start;
+        gap: var(--space-2);
     }
 
     .game-header-row {
@@ -559,12 +605,6 @@
 
     .round-indent.last-round {
         border-left-color: transparent;
-    }
-
-    /* ── Floating cluster card ───────────────────────────────────────── */
-    .cluster-card {
-        padding: 0;
-        overflow: hidden;
     }
 
     .event-list {
