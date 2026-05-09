@@ -266,6 +266,7 @@
         <div class="section-heading">Incident Log</div>
 
         {#each buildTree(data.insights) as game, gi}
+            {@const gameKey = 'g-' + game.matchName}
             <div class="card game-tree-card">
                 <!-- ── Game header ─────────────────────────────────── -->
                 <button class="game-header-row" onclick={() => toggle(gameKey)}>
