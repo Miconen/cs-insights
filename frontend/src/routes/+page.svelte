@@ -12,6 +12,7 @@
     let error = '';
     let chartCanvas: HTMLCanvasElement;
     let chartInstance: any;
+    let activeEventTypes: string[] = [];
     async function fetchData() {
         if (!playerName) return;
         loading = true;
@@ -153,6 +154,45 @@
         return result;
     }
 
+    function eventTypes(insights: any[]): string[] {
+        return [...new Set((insights || []).map((ins) => ins.Type))].sort();
+    }
+
+    function visibleInsights(insights: any[]): any[] {
+        if (!insights) return [];
+        if (!activeEventTypes.length) return insights;
+        return insights.filter((ins) => activeEventTypes.includes(ins.Type));
+    }
+
+    function toggleEventType(type: string) {
+        activeEventTypes = activeEventTypes.includes(type)
+            ? activeEventTypes.filter((t) => t !== type)
+            : [...activeEventTypes, type];
+    }
+
+    function insightDomId(ins: any): string {
+        const raw = `${ins.MatchName}-${ins.Round}-${ins.Tick}-${ins.Type}`;
+        return `event-${raw.replace(/[^a-zA-Z0-9_-]/g, '-')}`;
+    }
+
+    function scrollToInsight(ins: any) {
+        openKeys = {
+            ...openKeys,
+            [`g-${ins.MatchName}`]: true,
+            [`r-${ins.MatchName}-${ins.Round}`]: true
+        };
+        setTimeout(() => {
+            document.getElementById(insightDomId(ins))?.scrollIntoView({ behavior: 'smooth', block: 'center' });
+        }, 0);
+    }
+
+    function gunfightOutcome(ev: any): 'won' | 'lost' | '' {
+        if (ev.Type !== 'Gunfight') return '';
+        if (ev.Description?.includes('(Won)')) return 'won';
+        if (ev.Description?.includes('(Lost)')) return 'lost';
+        return '';
+    }
+
     // ── Unified open/close state ──────────────────────────────────────────────
     // Absent key or '!== false' means open by default (games & rounds).
     // Gunfight timeline keys use gfKey prefix and are closed by default (=== true).
@@ -263,9 +303,28 @@
             </div>
         </div>
 
-        <div class="section-heading">Incident Log</div>
+        <div class="section-heading">Event Log</div>
 
-        {#each buildTree(data.insights) as game, gi}
+        <div class="incident-toolbar">
+            <button class:active={!activeEventTypes.length} class="chip" onclick={() => activeEventTypes = []}>All</button>
+            {#each eventTypes(data.insights) as type}
+                <button class:active={activeEventTypes.includes(type)} class="chip" onclick={() => toggleEventType(type)}>{type}</button>
+            {/each}
+        </div>
+
+        {@const filteredInsights = visibleInsights(data.insights)}
+        <div class="event-navigator" aria-label="Event timeline navigator">
+            {#each [...filteredInsights].sort((a, b) => a.Round - b.Round || a.Tick - b.Tick) as navEvent}
+                <button
+                    class="event-nav-dot {gunfightOutcome(navEvent)}"
+                    style="background:{severityColor[navEvent.Severity]??'var(--color-accent)'}"
+                    title={`Round ${navEvent.Round} · T${navEvent.Tick} · ${navEvent.Type}`}
+                    onclick={() => scrollToInsight(navEvent)}
+                ></button>
+            {/each}
+        </div>
+
+        {#each buildTree(filteredInsights) as game, gi}
             {@const gameKey = 'g-' + game.matchName}
             <div class="game-tree">
                 <!-- ── Game header ─────────────────────────────────── -->
@@ -303,7 +362,7 @@
                                     {#each roundSection.clusters as cluster, ci}
                                         <div class="event-list" class:cluster-gap={ci > 0}>
                                             {#each cluster.events as ev, i}
-                                                <div class="event-row">
+                                                <div id={insightDomId(ev)} class="event-row {gunfightOutcome(ev)}">
                                                     <div class="event-gutter">
                                                         <div class="event-dot" style="background:{severityColor[ev.Severity]??'var(--color-accent)'}"></div>
                                                         {#if i < cluster.events.length - 1}
@@ -431,6 +490,58 @@
 
     .error-card .card-header {
         color: var(--color-danger);
+    }
+
+    .incident-toolbar {
+        display: flex;
+        gap: var(--space-2);
+        flex-wrap: wrap;
+        align-items: center;
+        margin-top: calc(var(--space-3) * -1);
+    }
+
+    .incident-toolbar .chip.active {
+        background: var(--color-accent);
+        border-color: var(--color-accent);
+        color: var(--color-accent-contrast);
+    }
+
+    .event-navigator {
+        position: sticky;
+        top: var(--space-2);
+        z-index: 5;
+        display: flex;
+        align-items: center;
+        gap: 0.22rem;
+        padding: var(--space-2) var(--space-3);
+        overflow-x: auto;
+        background: color-mix(in srgb, var(--color-surface) 86%, transparent);
+        border: 1px solid var(--color-border);
+        border-radius: var(--radius-sm);
+        backdrop-filter: blur(10px);
+    }
+
+    .event-nav-dot {
+        width: 0.55rem;
+        height: 1.35rem;
+        flex: 0 0 auto;
+        border: 0;
+        border-radius: 999px;
+        cursor: pointer;
+        opacity: 0.72;
+    }
+
+    .event-nav-dot:hover {
+        opacity: 1;
+        transform: translateY(-1px);
+    }
+
+    .event-nav-dot.won {
+        box-shadow: 0 0 0 1px color-mix(in srgb, var(--color-accent) 75%, transparent);
+    }
+
+    .event-nav-dot.lost {
+        box-shadow: 0 0 0 1px color-mix(in srgb, var(--color-danger) 75%, transparent);
     }
 
     /* ── Outer tree: game → round ────────────────────────────────────── */
@@ -569,6 +680,17 @@
         display: flex;
         gap: var(--space-3);
         min-width: 0;
+        border-radius: var(--radius-sm);
+        border-left: 2px solid transparent;
+        padding-left: var(--space-2);
+    }
+
+    .event-row.won {
+        border-left-color: var(--color-accent);
+    }
+
+    .event-row.lost {
+        border-left-color: var(--color-danger);
     }
 
     /* Left gutter: dot + vertical line */
