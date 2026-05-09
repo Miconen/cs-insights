@@ -267,20 +267,14 @@
         {#each buildTree(data.insights) as game, gi}
 
             <!-- ── Game node ─────────────────────────────────────────── -->
-            <div class="ot-row">
-                <div class="ot-gutter">
-                    <div class="ot-dot game-dot"></div>
-                    <div class="ot-connector"></div>
-                </div>
-                <div class="ot-label game-label">
-                    <strong>{game.mapName}</strong>
-                    <span class="small muted mono">{game.displayName}</span>
-                    <span class="small muted">· {game.total} events</span>
-                </div>
+            <div class="game-header-row">
+                <strong>{game.mapName}</strong>
+                <span class="small muted mono">{game.displayName}</span>
+                <span class="small muted">· {game.total} events</span>
             </div>
 
             <!-- ── Game children (rounds) ────────────────────────────── -->
-            <div class="ot-children" class:last-game={gi === buildTree(data.insights).length - 1}>
+            <div class="game-children">
                 {#each game.rounds as roundSection, ri}
 
                     <!-- ── Round node ─────────────────────────────────── -->
@@ -403,6 +397,23 @@
     }
 
     /* ── Outer tree: game → round ────────────────────────────────────── */
+    .game-header-row {
+        display: flex;
+        align-items: baseline;
+        gap: var(--space-2);
+        flex-wrap: wrap;
+        margin-bottom: var(--space-3);
+        font-size: 1.1rem;
+        border-bottom: 1px solid var(--color-border);
+        padding-bottom: var(--space-2);
+    }
+
+    .game-children {
+        display: flex;
+        flex-direction: column;
+        margin-bottom: var(--space-6);
+    }
+
     .ot-row {
         display: flex;
         align-items: flex-start;
@@ -422,13 +433,6 @@
         flex-shrink: 0;
     }
 
-    .game-dot {
-        width: 0.65rem;
-        height: 0.65rem;
-        background: var(--color-text);
-        margin-top: 0.22rem;
-    }
-
     .round-dot {
         width: 0.45rem;
         height: 0.45rem;
@@ -442,32 +446,6 @@
         background: var(--color-border);
         margin: 0.2rem 0;
         min-height: var(--space-2);
-    }
-
-    .ot-label {
-        display: flex;
-        align-items: baseline;
-        flex-wrap: wrap;
-        gap: var(--space-2);
-        padding-top: 0.1rem;
-        padding-bottom: var(--space-2);
-    }
-
-    .game-label {
-        font-size: 0.95rem;
-    }
-
-    .ot-children {
-        /* continue the outer tree line down beside rounds */
-        border-left: 1px solid var(--color-border);
-        margin-left: 0.48rem;          /* centre on .game-dot */
-        padding-left: var(--space-4);
-        padding-bottom: var(--space-2);
-        margin-bottom: var(--space-5);
-    }
-
-    .ot-children.last-game {
-        border-left-color: transparent;
     }
 
     .round-label {
