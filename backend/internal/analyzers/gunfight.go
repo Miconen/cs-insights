@@ -39,6 +39,8 @@ type Gunfight struct {
 	TargetFirstBulletAccuracy float64
 	TargetWasPeeking          bool
 	EnemyWasPeeking           bool
+	TargetMaxDist             float64
+	EnemyMaxDist              float64
 }
 
 type GunfightMetadata struct {
@@ -52,6 +54,8 @@ type GunfightMetadata struct {
 	FirstBulletAcc float64 `json:"first_bullet_acc"`
 	WasPeeking     bool    `json:"was_peeking"` // Kept for backwards compatibility
 	FightType      string  `json:"fight_type"`
+	TargetMaxDist  float64 `json:"target_max_dist"`
+	EnemyMaxDist   float64 `json:"enemy_max_dist"`
 	Tags           []string `json:"tags"`
 
 	TargetDamage  int    `json:"target_damage"`
@@ -141,8 +145,9 @@ func (a *GunfightAnalyzer) OnEvent(event interface{}, state *parser.GameState) {
 						}
 					}
 				}
-				// If they moved more than 40 units in the last 1 second (~64 ticks), they are peeking/dancing
-				duel.TargetWasPeeking = maxDist > 40.0
+				// If they moved more than 15 units in the last 1 second (~64 ticks), they are peeking/dancing
+				duel.TargetWasPeeking = maxDist > 15.0
+				duel.TargetMaxDist = maxDist
 			}
 		} else if closestEnemy.Name == a.targetPlayer {
 			duel := a.getOrCreateDuel(state, e.Shooter)
@@ -164,7 +169,8 @@ func (a *GunfightAnalyzer) OnEvent(event interface{}, state *parser.GameState) {
 						}
 					}
 				}
-				duel.EnemyWasPeeking = maxDist > 40.0
+				duel.EnemyWasPeeking = maxDist > 15.0
+				duel.EnemyMaxDist = maxDist
 			}
 		}
 
@@ -363,6 +369,8 @@ func (a *GunfightAnalyzer) resolveDuel(state *parser.GameState, duel *Gunfight, 
 		Winner:         winner,
 		FirstBulletAcc: duel.TargetFirstBulletAccuracy,
 		WasPeeking:     duel.TargetWasPeeking,
+		TargetMaxDist:  duel.TargetMaxDist,
+		EnemyMaxDist:   duel.EnemyMaxDist,
 		TargetDamage:   duel.TargetDamage,
 		EnemyDamage:    duel.EnemyDamage,
 		TargetHits:     duel.TargetHits,
@@ -397,6 +405,9 @@ func (a *GunfightAnalyzer) resolveDuel(state *parser.GameState, duel *Gunfight, 
 	rating, analysis := evaluateDuel(duel, meta, winner == a.targetPlayer)
 	meta.Rating = rating
 	meta.Analysis = analysis
+
+	// Debug tag
+	meta.Tags = append(meta.Tags, fmt.Sprintf("TargetDist: %.1f, EnemyDist: %.1f", duel.TargetMaxDist, duel.EnemyMaxDist))
 
 	metaBytes, _ := json.Marshal(meta)
 
