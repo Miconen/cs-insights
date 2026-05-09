@@ -1,4 +1,6 @@
 <script lang="ts">
+    import { goto } from '$app/navigation';
+
     let steamId = '';
     let cookie = '';
     let playerName = '';
@@ -6,8 +8,10 @@
     let loadingMatches = false;
     let matches: any[] = [];
     let error = '';
-    let processingLink = '';
+    let processingLinks: Record<string, boolean> = {};
     let processingStatuses: Record<string, string> = {};
+
+    const api = (path: string) => path;
 
     function setProcessingStatus(link: string, status: string) {
         processingStatuses = { ...processingStatuses, [link]: status };
@@ -20,16 +24,28 @@
         return match.processed ? 'Analyzed' : (match.downloaded ? 'Analyze Again' : 'Download & Analyze');
     }
 
+    function isProcessing(link: string) {
+        return !!processingLinks[link];
+    }
+
     async function fetchMatches(e: Event) {
         e.preventDefault();
         error = '';
+        matches = [];
+        processingStatuses = {};
         loadingMatches = true;
         try {
-            const res = await fetch(`http://localhost:8080/api/fetch/list?steam_id=${encodeURIComponent(steamId)}&cookie=${encodeURIComponent(cookie)}`);
+            const res = await fetch(api('/api/fetch/list'), {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ steam_id: steamId, cookie })
+            });
             if (!res.ok) throw new Error(await res.text());
             matches = await res.json();
+            cookie = '';
         } catch (e: any) {
             error = e.message;
+            matches = [];
         } finally {
             loadingMatches = false;
         }
@@ -41,7 +57,7 @@
             return;
         }
 
-        processingLink = match.link;
+        processingLinks = { ...processingLinks, [match.link]: true };
         setProcessingStatus(match.link, match.downloaded ? 'Found local demo. Processing...' : 'Checking local demo...');
 
         const timers = [
@@ -51,7 +67,7 @@
         ];
 
         try {
-            const res = await fetch('http://localhost:8080/api/fetch/process', {
+            const res = await fetch(api('/api/fetch/process'), {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify({ link: match.link, player_name: playerName })
@@ -66,7 +82,8 @@
             setProcessingStatus(match.link, `Failed: ${e.message}`);
         } finally {
             timers.forEach(clearTimeout);
-            processingLink = '';
+            const { [match.link]: _done, ...rest } = processingLinks;
+            processingLinks = rest;
         }
     }
 </script>
@@ -111,7 +128,7 @@
                 </label>
 
                 <div class="legacy-actions">
-                    <button class="chip primary-chip" type="submit" aria-busy={loadingMatches}>Load Match History</button>
+                    <button class="chip primary-chip" type="submit" aria-busy={loadingMatches} disabled={loadingMatches}>Load Match History</button>
                 </div>
             </form>
         </article>
@@ -148,21 +165,18 @@
                                             <span class="muted">Not Downloaded</span>
                                         {/if}
                                     </td>
-                                    <td data-label="Action">
+                                    <td class="action-cell" data-label="Action">
                                         <button
                                             class="chip"
-                                            disabled={processingLink === match.link || match.processed}
-                                            aria-busy={processingLink === match.link}
+                                            disabled={isProcessing(match.link) || match.processed}
+                                            aria-busy={isProcessing(match.link)}
                                             onclick={() => processMatch(match)}
                                         >
-                                            {#if processingStatuses[match.link] && processingLink === match.link}
-                                                {processingStatuses[match.link]}
-                                            {:else if processingStatuses[match.link] && match.processed}
-                                                {processingStatuses[match.link]}
-                                            {:else}
-                                                {match.processed ? 'Analyzed' : (match.downloaded ? 'Analyze Again' : 'Download & Analyze')}
-                                            {/if}
+                                            {actionLabel(match)}
                                         </button>
+                                        {#if match.processed}
+                                            <button class="chip chip-muted" onclick={() => goto(`/?player=${encodeURIComponent(playerName)}`)}>View dashboard</button>
+                                        {/if}
                                     </td>
                                 </tr>
                             {/each}
@@ -219,6 +233,18 @@
         width: 100%;
     }
 
+    td[data-label='File Name'] code {
+        overflow-wrap: anywhere;
+        white-space: normal;
+    }
+
+    .action-cell {
+        display: flex;
+        gap: var(--space-2);
+        flex-wrap: wrap;
+        align-items: center;
+    }
+
     .field-label {
         align-items: baseline;
         display: flex;
@@ -268,6 +294,11 @@
         .legacy-actions {
             align-items: flex-start;
             flex-direction: column;
+        }
+
+        .primary-chip {
+            width: 100%;
+            justify-content: center;
         }
 
     }
