@@ -184,29 +184,63 @@ func (s *Server) handleInsightsAPI(w http.ResponseWriter, r *http.Request) {
 	}
 
 	var richInsights []RichInsight
-	counts := make(map[string]int)
-	gameCounts := make(map[string]int)
-	gameMaps := make(map[string]string)
-
-	lostDuels := 0
-	totalTTDDiff := 0.0
-
 	for _, i := range insights {
-		counts[i.Type]++
-
 		ri := RichInsight{Insight: i, Meta: make(map[string]interface{})}
 		if i.Metadata != "" {
 			json.Unmarshal([]byte(i.Metadata), &ri.Meta)
 		}
 		ri.MatchDisplay = displayMatchName(i.MatchName)
 		ri.MapName = mapNameFromMeta(ri.Meta)
-		gameCounts[i.MatchName]++
+		richInsights = append(richInsights, ri)
+	}
+
+	// Collapse duplicate PrematureFire events in the same round
+	var collapsedInsights []RichInsight
+	var lastPrematureTick int
+	var lastPrematureRound int
+	var lastPrematureMatch string
+
+	for i := len(richInsights) - 1; i >= 0; i-- {
+		ri := richInsights[i]
+		if ri.Type == "PrematureFire" {
+			if ri.MatchName == lastPrematureMatch && ri.Round == lastPrematureRound && (ri.Tick-lastPrematureTick) > 0 && (ri.Tick-lastPrematureTick) < 128 {
+				lastPrematureTick = ri.Tick
+				continue
+			}
+			lastPrematureMatch = ri.MatchName
+			lastPrematureRound = ri.Round
+			lastPrematureTick = ri.Tick
+		}
+		collapsedInsights = append(collapsedInsights, ri)
+	}
+
+	richInsights = collapsedInsights
+
+	// Sort insights by MatchName descending, then Round ascending, then Tick ascending
+	sort.Slice(richInsights, func(i, j int) bool {
+		if richInsights[i].MatchName == richInsights[j].MatchName {
+			if richInsights[i].Round == richInsights[j].Round {
+				return richInsights[i].Tick < richInsights[j].Tick
+			}
+			return richInsights[i].Round < richInsights[j].Round
+		}
+		return richInsights[i].MatchName > richInsights[j].MatchName
+	})
+
+	counts := make(map[string]int)
+	gameCounts := make(map[string]int)
+	gameMaps := make(map[string]string)
+	lostDuels := 0
+	totalTTDDiff := 0.0
+
+	for _, ri := range richInsights {
+		counts[ri.Type]++
+		gameCounts[ri.MatchName]++
 		if ri.MapName != "" {
-			gameMaps[i.MatchName] = ri.MapName
+			gameMaps[ri.MatchName] = ri.MapName
 		}
 
-		// Extract gunfight data for advice
-		if i.Type == "Gunfight" && ri.Meta["winner"] != nil && ri.Meta["winner"] != playerName {
+		if ri.Type == "Gunfight" && ri.Meta["winner"] != nil && ri.Meta["winner"] != playerName {
 			lostDuels++
 			targetTTD, ok1 := ri.Meta["target_ttd_ms"].(float64)
 			enemyTTD, ok2 := ri.Meta["enemy_ttd_ms"].(float64)
@@ -214,13 +248,10 @@ func (s *Server) handleInsightsAPI(w http.ResponseWriter, r *http.Request) {
 				totalTTDDiff += (targetTTD - enemyTTD)
 			}
 		}
-
-		richInsights = append(richInsights, ri)
 	}
 
 	// Generate Actionable Advice (now plain text, frontend handles HTML)
 	var advice []string
-
 	totalGunfights := counts["Gunfight"]
 	if lostDuels > 0 && totalGunfights > 0 {
 		lossRate := int(float64(lostDuels) / float64(totalGunfights) * 100)
@@ -249,37 +280,6 @@ func (s *Server) handleInsightsAPI(w http.ResponseWriter, r *http.Request) {
 			advice = append(advice, fmt.Sprintf("Spray Control: %d inefficient sprays detected (under 20%% hit rate). Practise recoil control or switch to burst/tap at medium-to-long range.", n))
 		}
 	}
-
-	// Collapse duplicate PrematureFire events in the same round
-	var collapsedInsights []RichInsight
-	var lastPrematureTick int
-	var lastPrematureRound int
-
-	for i := len(richInsights) - 1; i >= 0; i-- {
-		ri := richInsights[i]
-		if ri.Type == "PrematureFire" {
-			if ri.Round == lastPrematureRound && (ri.Tick-lastPrematureTick) > 0 && (ri.Tick-lastPrematureTick) < 128 {
-				lastPrematureTick = ri.Tick
-				continue
-			}
-			lastPrematureRound = ri.Round
-			lastPrematureTick = ri.Tick
-		}
-		collapsedInsights = append(collapsedInsights, ri)
-	}
-
-	richInsights = collapsedInsights
-
-	// Sort insights by MatchName descending, then Round ascending, then Tick ascending
-	sort.Slice(richInsights, func(i, j int) bool {
-		if richInsights[i].MatchName == richInsights[j].MatchName {
-			if richInsights[i].Round == richInsights[j].Round {
-				return richInsights[i].Tick < richInsights[j].Tick
-			}
-			return richInsights[i].Round < richInsights[j].Round
-		}
-		return richInsights[i].MatchName > richInsights[j].MatchName
-	})
 
 	avgTTD := 0
 	if lostDuels > 0 && totalTTDDiff > 0 {
