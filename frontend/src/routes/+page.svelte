@@ -193,6 +193,28 @@
         return '';
     }
 
+    function duelTimelineEvents(meta: any) {
+        const events: { ms: number; label: string; type: string; bold: boolean }[] = [];
+        const add = (ms: any, label: string, type = 'spotted', bold = false) => {
+            if (typeof ms === 'number' && ms >= 0) events.push({ ms, label, type, bold });
+        };
+
+        add(meta.target_seen_ms, 'Enemy entered your angle');
+        add(meta.enemy_seen_ms, 'You entered enemy angle', 'enemy');
+        if ((meta.target_seen_ms ?? -1) < 0 && (meta.enemy_seen_ms ?? -1) < 0) {
+            add(meta.combat_start_ms, meta.start_source === 'damage' ? 'Damage detected' : 'Combat detected');
+        } else {
+            add(meta.combat_start_ms, 'Combat started');
+        }
+        add(meta.target_shot_ms, 'You fired', 'you');
+        add(meta.enemy_shot_ms, 'Enemy fired', 'enemy');
+        add(meta.target_ttd_ms, 'You dealt damage', 'you', true);
+        add(meta.enemy_ttd_ms, 'Enemy dealt damage', 'enemy', true);
+        if (meta.outcome === 'Reset') add(meta.resolution_ms, 'Fight reset');
+
+        return events.sort((a, b) => a.ms - b.ms);
+    }
+
     // ── Unified open/close state ──────────────────────────────────────────────
     // Absent key or '!== false' means open by default (games & rounds).
     // Gunfight timeline keys use gfKey prefix and are closed by default (=== true).
@@ -387,6 +409,12 @@
                                                                     {#if ev.meta.fight_type}
                                                                         <div class="fight-tags" style="display: flex; gap: 0.5rem; flex-wrap: wrap; margin-bottom: 0.5rem;">
                                                                             <span class="chip" style="background: var(--color-surface-3); border-color: transparent;">{ev.meta.fight_type}</span>
+                                                                            {#if ev.meta.timing_confidence}
+                                                                                <span class="chip" style="border-style: dashed;">Timing: {ev.meta.timing_confidence}</span>
+                                                                            {/if}
+                                                                            {#if ev.meta.classification_confidence}
+                                                                                <span class="chip" style="border-style: dashed;">Movement: {ev.meta.classification_confidence}</span>
+                                                                            {/if}
                                                                             {#if ev.meta.tags}
                                                                                 {#each ev.meta.tags as tag}
                                                                                     <span class="chip" style="border-style: dashed;">{tag}</span>
@@ -403,16 +431,10 @@
                                                                         <hr class="timeline-divider">
                                                                     {/if}
                                                                     
-                                                                    {#each [
-                                                                        { ms: 0, label: 'Spotted', type: 'spotted', bold: false },
-                                                                        ev.meta.target_shot_ms >= 0 ? { ms: ev.meta.target_shot_ms, label: 'You fired', type: 'you', bold: false } : null,
-                                                                        ev.meta.enemy_shot_ms >= 0 ? { ms: ev.meta.enemy_shot_ms, label: 'Enemy fired', type: 'enemy', bold: false } : null,
-                                                                        ev.meta.target_ttd_ms >= 0 ? { ms: ev.meta.target_ttd_ms, label: 'You dealt damage', type: 'you', bold: true } : null,
-                                                                        ev.meta.enemy_ttd_ms >= 0 ? { ms: ev.meta.enemy_ttd_ms, label: 'Enemy dealt damage', type: 'enemy', bold: true } : null
-                                                                    ].filter((x) => x !== null).sort((a, b) => a!.ms - b!.ms) as tEv}
-                                                                        <div class="timeline-row {tEv!.type} {tEv!.bold ? 'bold' : ''}">
-                                                                            <span class="t-time">{Math.round(tEv!.ms)}ms</span>
-                                                                            <span>{tEv!.label}</span>
+                                                                    {#each duelTimelineEvents(ev.meta) as tEv}
+                                                                        <div class="timeline-row {tEv.type} {tEv.bold ? 'bold' : ''}">
+                                                                            <span class="t-time">{Math.round(tEv.ms)}ms</span>
+                                                                            <span>{tEv.label}</span>
                                                                         </div>
                                                                     {/each}
                                                                     
