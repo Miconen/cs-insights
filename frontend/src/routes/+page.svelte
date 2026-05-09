@@ -558,6 +558,10 @@
         display: flex;
         gap: var(--space-3);
         min-width: 0;
+        padding: var(--space-3);
+        margin-bottom: var(--space-3);
+        background: var(--color-surface-2);
+        border-radius: var(--radius-sm);
     }
 
     /* Left gutter: dot + vertical line */
@@ -588,16 +592,12 @@
     .event-content {
         flex: 1;
         min-width: 0;
-        padding: var(--space-3);
-        margin-bottom: var(--space-3);
-        background: var(--color-surface-2);
-        border-radius: var(--radius-sm);
         display: flex;
         flex-direction: column;
         gap: var(--space-1);
     }
 
-    .event-row:last-child .event-content {
+    .event-row:last-child {
         margin-bottom: 0;
     }
 
